@@ -347,7 +347,7 @@ def from_key_val_list(value):
 
 def to_key_val_list(value):
     """Take an object and test to see if it can be represented as a
-    dictionary. If it can be, return a list of tuples, e.g.,
+    dictionary. If it can, return a list of tuples, e.g.,
 
     ::
 
@@ -369,7 +369,7 @@ def to_key_val_list(value):
         raise ValueError("cannot encode objects that are not 2-tuples")
 
     if isinstance(value, Mapping):
-        value = value.items()
+        return list(value.items())
 
     return list(value)
 

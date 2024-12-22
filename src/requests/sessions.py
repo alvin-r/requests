@@ -50,6 +50,7 @@ from .utils import (  # noqa: F401
     should_bypass_proxies,
     to_key_val_list,
 )
+from itertools import chain
 
 # Preferred clock, based on which one is more accurate on a given system.
 if sys.platform == "win32":
@@ -59,9 +60,10 @@ else:
 
 
 def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
-    """Determines appropriate setting for a given request, taking into account
-    the explicit setting on that request, and the setting in the session. If a
-    setting is a dictionary, they will be merged together using `dict_class`
+    """Determines the appropriate setting for a given request, considering
+    both the explicit setting on that request and the setting in the session.
+    If a setting is a dictionary, they will be merged together using `dict_class`.
+    This function has been optimized for performance.
     """
 
     if session_setting is None:
@@ -70,18 +72,14 @@ def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
     if request_setting is None:
         return session_setting
 
-    # Bypass if not a dictionary (e.g. verify)
-    if not (
-        isinstance(session_setting, Mapping) and isinstance(request_setting, Mapping)
-    ):
+    # Bypass if not a dictionary (e.g., verify)
+    if not (isinstance(session_setting, Mapping) and isinstance(request_setting, Mapping)):
         return request_setting
 
-    merged_setting = dict_class(to_key_val_list(session_setting))
-    merged_setting.update(to_key_val_list(request_setting))
+    merged_setting = dict_class(chain(session_setting.items(), request_setting.items()))
 
-    # Remove keys that are set to None. Extract keys first to avoid altering
-    # the dictionary during iteration.
-    none_keys = [k for (k, v) in merged_setting.items() if v is None]
+    # Remove keys that are set to None
+    none_keys = [k for k, v in merged_setting.items() if v is None]
     for key in none_keys:
         del merged_setting[key]
 
