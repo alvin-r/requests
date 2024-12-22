@@ -128,33 +128,25 @@ class SessionRedirectMixin:
         """Decide whether Authorization header should be removed when redirecting"""
         old_parsed = urlparse(old_url)
         new_parsed = urlparse(new_url)
+
+        # If the hostnames differ, always strip auth
         if old_parsed.hostname != new_parsed.hostname:
             return True
-        # Special case: allow http -> https redirect when using the standard
-        # ports. This isn't specified by RFC 7235, but is kept to avoid
-        # breaking backwards compatibility with older versions of requests
-        # that allowed any redirects on the same host.
-        if (
-            old_parsed.scheme == "http"
-            and old_parsed.port in (80, None)
-            and new_parsed.scheme == "https"
-            and new_parsed.port in (443, None)
-        ):
-            return False
 
-        # Handle default port usage corresponding to scheme.
-        changed_port = old_parsed.port != new_parsed.port
-        changed_scheme = old_parsed.scheme != new_parsed.scheme
-        default_port = (DEFAULT_PORTS.get(old_parsed.scheme, None), None)
-        if (
-            not changed_scheme
-            and old_parsed.port in default_port
-            and new_parsed.port in default_port
-        ):
-            return False
+        # Precompute default ports
+        old_default_port = DEFAULT_PORTS.get(old_parsed.scheme, None)
+        new_default_port = DEFAULT_PORTS.get(new_parsed.scheme, None)
 
-        # Standard case: root URI must match
-        return changed_port or changed_scheme
+        old_port = old_parsed.port or old_default_port
+        new_port = new_parsed.port or new_default_port
+
+        # HTTP to HTTPS redirection rule for standard ports
+        if old_parsed.scheme == "http" and new_parsed.scheme == "https":
+            if old_port == 80 and new_port == 443:
+                return False
+
+        # Compare schemes and ports
+        return old_parsed.scheme != new_parsed.scheme or old_port != new_port
 
     def resolve_redirects(
         self,
