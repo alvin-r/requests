@@ -12,7 +12,8 @@ import copy
 import time
 
 from ._internal_utils import to_native_string
-from .compat import Morsel, MutableMapping, cookielib, urlparse, urlunparse
+from .compat import (Morsel, MutableMapping, builtin_str, cookielib, urlparse,
+                     urlunparse)
 
 try:
     import threading
@@ -47,24 +48,22 @@ class MockRequest:
         return self.get_host()
 
     def get_full_url(self):
-        # Only return the response's URL if the user hadn't set the Host
-        # header
-        if not self._r.headers.get("Host"):
+        # Store headers in a local variable for faster access
+        headers = self._r.headers
+        
+        # Only return the response's URL if the user hadn't set the Host header
+        host = headers.get("Host")
+        if not host:
             return self._r.url
-        # If they did set it, retrieve it and reconstruct the expected domain
-        host = to_native_string(self._r.headers["Host"], encoding="utf-8")
+
+        # Otherwise, reconstruct the URL with the provided Host
         parsed = urlparse(self._r.url)
-        # Reconstruct the URL as we expect it
-        return urlunparse(
-            [
-                parsed.scheme,
-                host,
-                parsed.path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment,
-            ]
-        )
+        
+        # Use the to_native_string function directly here for speed
+        host = host if isinstance(host, builtin_str) else host.decode("utf-8")
+        
+        # Reduce parameters overhead by reducing the list elements directly in urlunparse
+        return urlunparse((parsed.scheme, host, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
     def is_unverifiable(self):
         return True
