@@ -74,7 +74,10 @@ class CaseInsensitiveDict(MutableMapping):
 
     # Copy is required
     def copy(self):
-        return CaseInsensitiveDict(self._store.values())
+        # Use self._store directly, preserving internal structure
+        new_dict = CaseInsensitiveDict()
+        new_dict._store = self._store.copy()
+        return new_dict
 
     def __repr__(self):
         return str(dict(self.items()))
