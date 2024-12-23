@@ -709,12 +709,14 @@ class Response:
         self.close()
 
     def __getstate__(self):
-        # Consume everything; accessing the content attribute makes
-        # sure the content has been fully read.
+        # Consume everything; accessing the content attribute ensures 
+        # that the content has been fully read.
         if not self._content_consumed:
-            self.content
+            _ = self.content  # Access self.content to trigger content consumption
 
-        return {attr: getattr(self, attr, None) for attr in self.__attrs__}
+        # Use a dictionary comprehension directly to avoid calling getattr repeatedly
+        state = dict(zip(self.__attrs__, map(self.__dict__.get, self.__attrs__)))
+        return state
 
     def __setstate__(self, state):
         for name, value in state.items():
@@ -1035,3 +1037,22 @@ class Response:
         release_conn = getattr(self.raw, "release_conn", None)
         if release_conn is not None:
             release_conn()
+
+    @property
+    def content(self):
+        """Content of the response, in bytes."""
+
+        if self._content is False:
+            # Check if the content has already been consumed
+            if self._content_consumed:
+                raise RuntimeError("The content for this response was already consumed")
+
+            # Directly check if the status_code is 0 or raw is None
+            if self.status_code == 0 or self.raw is None:
+                self._content = None
+            else:
+                # Optimize by avoiding unnecessary else clause
+                self._content = b"".join(self.iter_content(CONTENT_CHUNK_SIZE)) or b""
+
+        self._content_consumed = True
+        return self._content
