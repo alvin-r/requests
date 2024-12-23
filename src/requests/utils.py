@@ -565,8 +565,7 @@ def get_encoding_from_headers(headers):
 
 
 def stream_decode_response_unicode(iterator, r):
-    """Stream decodes an iterator."""
-
+    """Stream decodes an iterator, optimized to handle decoding more efficiently."""
     if r.encoding is None:
         yield from iterator
         return
@@ -582,13 +581,12 @@ def stream_decode_response_unicode(iterator, r):
 
 
 def iter_slices(string, slice_length):
-    """Iterate over slices of a string."""
-    pos = 0
+    """Iterate over slices of a string more efficiently."""
     if slice_length is None or slice_length <= 0:
-        slice_length = len(string)
-    while pos < len(string):
-        yield string[pos : pos + slice_length]
-        pos += slice_length
+        yield string
+    else:
+        slices = (string[i:i+slice_length] for i in range(0, len(string), slice_length))
+        yield from slices
 
 
 def get_unicode_from_response(r):
