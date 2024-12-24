@@ -808,8 +808,7 @@ class Session(SessionRedirectMixin):
             self.adapters[key] = self.adapters.pop(key)
 
     def __getstate__(self):
-        state = {attr: getattr(self, attr, None) for attr in self.__attrs__}
-        return state
+        return {attr: getattr(self, attr, None) for attr in self.__attrs__}
 
     def __setstate__(self, state):
         for attr, value in state.items():
