@@ -107,22 +107,19 @@ codes = LookupDict(name="status_codes")
 
 
 def _init():
+    format_str = '{}.{name}'
+    code_doc = []
+
     for code, titles in _codes.items():
+        code_doc.append(f"* {code}: {', '.join(f'``{title}``' for title in titles)}")
         for title in titles:
             setattr(codes, title, code)
             if not title.startswith(("\\", "/")):
                 setattr(codes, title.upper(), code)
 
-    def doc(code):
-        names = ", ".join(f"``{n}``" for n in _codes[code])
-        return "* %d: %s" % (code, names)
-
     global __doc__
-    __doc__ = (
-        __doc__ + "\n" + "\n".join(doc(code) for code in sorted(_codes))
-        if __doc__ is not None
-        else None
-    )
+    if __doc__ is not None:
+        __doc__ += "\n" + "\n".join(code_doc)
 
 
 _init()
