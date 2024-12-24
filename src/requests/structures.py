@@ -77,7 +77,10 @@ class CaseInsensitiveDict(MutableMapping):
         return CaseInsensitiveDict(self._store.values())
 
     def __repr__(self):
-        return str(dict(self.items()))
+        return str({k: v for k, v in self._store.values()})
+
+    def lower_items(self):
+        return ((k.lower(), v[1]) for k, v in self._store.items())
 
 
 class LookupDict(dict):
