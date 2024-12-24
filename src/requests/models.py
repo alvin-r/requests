@@ -377,7 +377,8 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
         self.prepare_hooks(hooks)
 
     def __repr__(self):
-        return f"<PreparedRequest [{self.method}]>"
+        method = self.method if self.method else 'None'
+        return f"<PreparedRequest [{method}]>"
 
     def copy(self):
         p = PreparedRequest()
