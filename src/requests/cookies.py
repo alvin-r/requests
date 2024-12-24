@@ -153,15 +153,13 @@ def remove_cookie_by_name(cookiejar, name, domain=None, path=None):
 
     Wraps CookieJar.clear(), is O(n).
     """
-    clearables = []
-    for cookie in cookiejar:
-        if cookie.name != name:
-            continue
-        if domain is not None and domain != cookie.domain:
-            continue
-        if path is not None and path != cookie.path:
-            continue
-        clearables.append((cookie.domain, cookie.path, cookie.name))
+    clearables = [
+        (cookie.domain, cookie.path, cookie.name)
+        for cookie in cookiejar
+        if cookie.name == name and
+        (domain is None or domain == cookie.domain) and
+        (path is None or path == cookie.path)
+    ]
 
     for domain, path, name in clearables:
         cookiejar.clear(domain, path, name)
@@ -210,15 +208,10 @@ class RequestsCookieJar(cookielib.CookieJar, MutableMapping):
         """
         # support client code that unsets cookies by assignment of a None value:
         if value is None:
-            remove_cookie_by_name(
-                self, name, domain=kwargs.get("domain"), path=kwargs.get("path")
-            )
+            remove_cookie_by_name(self, name, domain=kwargs.get("domain"), path=kwargs.get("path"))
             return
 
-        if isinstance(value, Morsel):
-            c = morsel_to_cookie(value)
-        else:
-            c = create_cookie(name, value, **kwargs)
+        c = morsel_to_cookie(value) if isinstance(value, Morsel) else create_cookie(name, value, **kwargs)
         self.set_cookie(c)
         return c
 
@@ -474,17 +467,11 @@ def create_cookie(name, value, **kwargs):
         "rfc2109": False,
     }
 
-    badargs = set(kwargs) - set(result)
-    if badargs:
-        raise TypeError(
-            f"create_cookie() got unexpected keyword arguments: {list(badargs)}"
-        )
-
     result.update(kwargs)
-    result["port_specified"] = bool(result["port"])
-    result["domain_specified"] = bool(result["domain"])
-    result["domain_initial_dot"] = result["domain"].startswith(".")
-    result["path_specified"] = bool(result["path"])
+    result.setdefault("port_specified", bool(result["port"]))
+    result.setdefault("domain_specified", bool(result["domain"]))
+    result.setdefault("domain_initial_dot", result["domain"].startswith("."))
+    result.setdefault("path_specified", bool(result["path"]))
 
     return cookielib.Cookie(**result)
 
