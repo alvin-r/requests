@@ -14,7 +14,10 @@ import warnings
 from base64 import b64encode
 
 from ._internal_utils import to_native_string
-from .compat import basestring, str, urlparse
+from .compat import basestring
+from .compat import str
+from .compat import str as builtin_str
+from .compat import urlparse
 from .cookies import extract_cookies_to_jar
 from .utils import parse_dict_header
 
@@ -24,45 +27,27 @@ CONTENT_TYPE_MULTI_PART = "multipart/form-data"
 
 def _basic_auth_str(username, password):
     """Returns a Basic Auth string."""
+    
+    def ensure_bytes(value, name):
+        if isinstance(value, builtin_str):
+            return value.encode("latin1")
+        elif not isinstance(value, bytes):
+            warnings.warn(
+                f"Non-string {name} will no longer be supported in Requests 3.0.0. "
+                f"Please convert the object you've passed in ({value!r}) to "
+                f"a string or bytes object in the near future to avoid problems.",
+                category=DeprecationWarning,
+            )
+            return builtin_str(value).encode("latin1")
+        return value
 
-    # "I want us to put a big-ol' comment on top of it that
-    # says that this behaviour is dumb but we need to preserve
-    # it because people are relying on it."
-    #    - Lukasa
-    #
-    # These are here solely to maintain backwards compatibility
-    # for things like ints. This will be removed in 3.0.0.
-    if not isinstance(username, basestring):
-        warnings.warn(
-            "Non-string usernames will no longer be supported in Requests "
-            "3.0.0. Please convert the object you've passed in ({!r}) to "
-            "a string or bytes object in the near future to avoid "
-            "problems.".format(username),
-            category=DeprecationWarning,
-        )
-        username = str(username)
-
-    if not isinstance(password, basestring):
-        warnings.warn(
-            "Non-string passwords will no longer be supported in Requests "
-            "3.0.0. Please convert the object you've passed in ({!r}) to "
-            "a string or bytes object in the near future to avoid "
-            "problems.".format(type(password)),
-            category=DeprecationWarning,
-        )
-        password = str(password)
-    # -- End Removal --
-
-    if isinstance(username, str):
-        username = username.encode("latin1")
-
-    if isinstance(password, str):
-        password = password.encode("latin1")
-
+    username = ensure_bytes(username, "usernames")
+    password = ensure_bytes(password, "passwords")
+    
     authstr = "Basic " + to_native_string(
         b64encode(b":".join((username, password))).strip()
     )
-
+    
     return authstr
 
 
