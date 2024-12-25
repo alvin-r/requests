@@ -521,21 +521,21 @@ def _parse_content_type_header(header):
     :return: tuple containing content type and dictionary of
          parameters
     """
-
+    
     tokens = header.split(";")
-    content_type, params = tokens[0].strip(), tokens[1:]
+    content_type = tokens[0].strip()
     params_dict = {}
     items_to_strip = "\"' "
 
-    for param in params:
-        param = param.strip()
-        if param:
-            key, value = param, True
-            index_of_equals = param.find("=")
-            if index_of_equals != -1:
-                key = param[:index_of_equals].strip(items_to_strip)
-                value = param[index_of_equals + 1 :].strip(items_to_strip)
-            params_dict[key.lower()] = value
+    for param in tokens[1:]:
+        if "=" in param:
+            key, value = param.split("=", 1)
+            params_dict[key.strip(items_to_strip).lower()] = value.strip(items_to_strip)
+        else:
+            key = param.strip(items_to_strip)
+            if key:
+                params_dict[key.lower()] = True
+
     return content_type, params_dict
 
 
