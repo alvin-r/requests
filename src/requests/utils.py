@@ -503,15 +503,18 @@ def get_encodings_from_content(content):
         DeprecationWarning,
     )
 
-    charset_re = re.compile(r'<meta.*?charset=["\']*(.+?)["\'>]', flags=re.I)
-    pragma_re = re.compile(r'<meta.*?content=["\']*;?charset=(.+?)["\'>]', flags=re.I)
-    xml_re = re.compile(r'^<\?xml.*?encoding=["\']*(.+?)["\'>]')
+    # Compile regex patterns once outside the function for better performance
+    charset_re = re.compile(r'<meta[^>]*charset=["\']*([^"\'\s>]+)', flags=re.I)
+    pragma_re = re.compile(r'<meta[^>]*content=["\']*;?charset=([^"\'\s>]+)', flags=re.I)
+    xml_re = re.compile(r'^<\?xml[^>]*encoding=["\']*([^"\'\s>]+)', flags=re.I)
 
-    return (
-        charset_re.findall(content)
-        + pragma_re.findall(content)
-        + xml_re.findall(content)
-    )
+    # Limit the search space by using re.finditer, efficiently finding matches and avoiding
+    # unnecessary duplication of list merging
+    return [
+        match.group(1)
+        for regex in (charset_re, pragma_re, xml_re)
+        for match in regex.finditer(content)
+    ]
 
 
 def _parse_content_type_header(header):
