@@ -44,7 +44,7 @@ from .exceptions import (
     RetryError,
     SSLError,
 )
-from .models import Response
+from .models import PreparedRequest, Response
 from .structures import CaseInsensitiveDict
 from .utils import (
     DEFAULT_CA_BUNDLE_PATH,
@@ -93,43 +93,38 @@ def _urllib3_request_context(
     client_cert: "typing.Tuple[str, str] | str | None",
     poolmanager: "PoolManager",
 ) -> "(typing.Dict[str, typing.Any], typing.Dict[str, typing.Any])":
-    host_params = {}
-    pool_kwargs = {}
+
     parsed_request_url = urlparse(request.url)
     scheme = parsed_request_url.scheme.lower()
-    port = parsed_request_url.port
+    pool_kwargs = {}
 
-    # Determine if we have and should use our default SSLContext
-    # to optimize performance on standard requests.
+    # Use preloaded SSL context if necessary
     poolmanager_kwargs = getattr(poolmanager, "connection_pool_kw", {})
-    has_poolmanager_ssl_context = poolmanager_kwargs.get("ssl_context")
-    should_use_default_ssl_context = (
-        _preloaded_ssl_context is not None and not has_poolmanager_ssl_context
-    )
+    has_poolmanager_ssl_context = 'ssl_context' in poolmanager_kwargs
+    if isinstance(verify, bool):
+        cert_reqs = "CERT_REQUIRED" if verify else "CERT_NONE"
+        if verify and not has_poolmanager_ssl_context and _preloaded_ssl_context:
+            pool_kwargs["ssl_context"] = _preloaded_ssl_context
+    else:
+        cert_reqs = "CERT_REQUIRED"
+        if isinstance(verify, str):
+            if os.path.isdir(verify):
+                pool_kwargs["ca_cert_dir"] = verify
+            else:
+                pool_kwargs["ca_certs"] = verify
 
-    cert_reqs = "CERT_REQUIRED"
-    if verify is False:
-        cert_reqs = "CERT_NONE"
-    elif verify is True and should_use_default_ssl_context:
-        pool_kwargs["ssl_context"] = _preloaded_ssl_context
-    elif isinstance(verify, str):
-        if not os.path.isdir(verify):
-            pool_kwargs["ca_certs"] = verify
-        else:
-            pool_kwargs["ca_cert_dir"] = verify
     pool_kwargs["cert_reqs"] = cert_reqs
-    if client_cert is not None:
-        if isinstance(client_cert, tuple) and len(client_cert) == 2:
-            pool_kwargs["cert_file"] = client_cert[0]
-            pool_kwargs["key_file"] = client_cert[1]
+
+    if client_cert:
+        if isinstance(client_cert, tuple):
+            pool_kwargs["cert_file"], pool_kwargs["key_file"] = client_cert
         else:
-            # According to our docs, we allow users to specify just the client
-            # cert path
             pool_kwargs["cert_file"] = client_cert
+
     host_params = {
         "scheme": scheme,
         "host": parsed_request_url.hostname,
-        "port": port,
+        "port": parsed_request_url.port,
     }
     return host_params, pool_kwargs
 
