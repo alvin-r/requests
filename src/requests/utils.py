@@ -1025,13 +1025,12 @@ def get_auth_from_url(url):
     :rtype: (str,str)
     """
     parsed = urlparse(url)
+    username = parsed.username
+    password = parsed.password
 
-    try:
-        auth = (unquote(parsed.username), unquote(parsed.password))
-    except (AttributeError, TypeError):
-        auth = ("", "")
-
-    return auth
+    if username is not None and password is not None:
+        return unquote(username), unquote(password)
+    return "", ""
 
 
 def check_header_validity(header):
