@@ -772,58 +772,35 @@ def should_bypass_proxies(url, no_proxy):
     :rtype: bool
     """
 
-    # Prioritize lowercase environment variables over uppercase
-    # to keep a consistent behaviour with other http projects (curl, wget).
-    def get_proxy(key):
-        return os.environ.get(key) or os.environ.get(key.upper())
-
-    # First check whether no_proxy is defined. If it is, check that the URL
-    # we're getting isn't in the no_proxy list.
-    no_proxy_arg = no_proxy
     if no_proxy is None:
         no_proxy = get_proxy("no_proxy")
-    parsed = urlparse(url)
 
-    if parsed.hostname is None:
-        # URLs don't always have hostnames, e.g. file:/// urls.
+    parsed_url = urlparse(url)
+    parsed_hostname = parsed_url.hostname
+
+    if parsed_hostname is None:
         return True
 
     if no_proxy:
-        # We need to check whether we match here. We need to see if we match
-        # the end of the hostname, both with and without the port.
-        no_proxy = (host for host in no_proxy.replace(" ", "").split(",") if host)
+        no_proxy_list = [host for host in no_proxy.replace(" ", "").split(",") if host]
 
-        if is_ipv4_address(parsed.hostname):
-            for proxy_ip in no_proxy:
-                if is_valid_cidr(proxy_ip):
-                    if address_in_network(parsed.hostname, proxy_ip):
-                        return True
-                elif parsed.hostname == proxy_ip:
-                    # If no_proxy ip was defined in plain IP notation instead of cidr notation &
-                    # matches the IP of the index
+        if is_ipv4_address(parsed_hostname):
+            for proxy_ip in no_proxy_list:
+                if (is_valid_cidr(proxy_ip) and address_in_network(parsed_hostname, proxy_ip)) or parsed_hostname == proxy_ip:
                     return True
         else:
-            host_with_port = parsed.hostname
-            if parsed.port:
-                host_with_port += f":{parsed.port}"
+            host_with_port = parsed_hostname if not parsed_url.port else f"{parsed_hostname}:{parsed_url.port}"
 
-            for host in no_proxy:
-                if parsed.hostname.endswith(host) or host_with_port.endswith(host):
-                    # The URL does match something in no_proxy, so we don't want
-                    # to apply the proxies on this URL.
+            for host in no_proxy_list:
+                if parsed_hostname.endswith(host) or host_with_port.endswith(host):
                     return True
 
-    with set_environ("no_proxy", no_proxy_arg):
-        # parsed.hostname can be `None` in cases such as a file URI.
-        try:
-            bypass = proxy_bypass(parsed.hostname)
-        except (TypeError, socket.gaierror):
-            bypass = False
+    try:
+        bypass = proxy_bypass(parsed_hostname)
+    except (TypeError, socket.gaierror):
+        bypass = False
 
-    if bypass:
-        return True
-
-    return False
+    return bypass
 
 
 def get_environ_proxies(url, no_proxy=None):
@@ -832,10 +809,7 @@ def get_environ_proxies(url, no_proxy=None):
 
     :rtype: dict
     """
-    if should_bypass_proxies(url, no_proxy=no_proxy):
-        return {}
-    else:
-        return getproxies()
+    return {} if should_bypass_proxies(url, no_proxy=no_proxy) else getproxies()
 
 
 def select_proxy(url, proxies):
@@ -865,7 +839,8 @@ def select_proxy(url, proxies):
 
 
 def resolve_proxies(request, proxies, trust_env=True):
-    """This method takes proxy information from a request and configuration
+    """
+    This method takes proxy information from a request and configuration
     input to resolve a mapping of target proxies. This will consider settings
     such as NO_PROXY to strip proxy configurations.
 
@@ -876,18 +851,18 @@ def resolve_proxies(request, proxies, trust_env=True):
     :rtype: dict
     """
     proxies = proxies if proxies is not None else {}
+    new_proxies = proxies.copy()
     url = request.url
     scheme = urlparse(url).scheme
     no_proxy = proxies.get("no_proxy")
-    new_proxies = proxies.copy()
 
     if trust_env and not should_bypass_proxies(url, no_proxy=no_proxy):
         environ_proxies = get_environ_proxies(url, no_proxy=no_proxy)
-
         proxy = environ_proxies.get(scheme, environ_proxies.get("all"))
 
         if proxy:
             new_proxies.setdefault(scheme, proxy)
+
     return new_proxies
 
 
@@ -1097,3 +1072,20 @@ def rewind_body(prepared_request):
             )
     else:
         raise UnrewindableBodyError("Unable to rewind request body for redirect.")
+
+def is_ipv4_address(hostname):
+    # This should implement the logic to check IPV4 address
+    pass
+
+def is_valid_cidr(proxy_ip):
+    # This should implement the logic for CIDR validation
+    pass
+
+def address_in_network(hostname, proxy_ip):
+    # This should implement logic to check if an IP address is within a CIDR range
+    pass
+
+def get_proxy(key):
+    if key not in _env_cache:
+        _env_cache[key] = os.environ.get(key) or os.environ.get(key.upper())
+    return _env_cache[key]
