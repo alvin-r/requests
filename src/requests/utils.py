@@ -771,59 +771,35 @@ def should_bypass_proxies(url, no_proxy):
 
     :rtype: bool
     """
-
-    # Prioritize lowercase environment variables over uppercase
-    # to keep a consistent behaviour with other http projects (curl, wget).
-    def get_proxy(key):
-        return os.environ.get(key) or os.environ.get(key.upper())
-
-    # First check whether no_proxy is defined. If it is, check that the URL
-    # we're getting isn't in the no_proxy list.
-    no_proxy_arg = no_proxy
-    if no_proxy is None:
-        no_proxy = get_proxy("no_proxy")
     parsed = urlparse(url)
+    hostname = parsed.hostname
 
-    if parsed.hostname is None:
-        # URLs don't always have hostnames, e.g. file:/// urls.
+    if hostname is None:
+        # URLs don't always have hostnames, e.g., file:/// URLs.
         return True
 
+    # Prioritize no_proxy argument over environment variables
+    no_proxy = no_proxy or os.environ.get("no_proxy") or os.environ.get("NO_PROXY")
     if no_proxy:
-        # We need to check whether we match here. We need to see if we match
-        # the end of the hostname, both with and without the port.
-        no_proxy = (host for host in no_proxy.replace(" ", "").split(",") if host)
+        no_proxy = [host.strip() for host in no_proxy.split(",") if host.strip()]
 
-        if is_ipv4_address(parsed.hostname):
+        if is_ipv4_address(hostname):
             for proxy_ip in no_proxy:
                 if is_valid_cidr(proxy_ip):
-                    if address_in_network(parsed.hostname, proxy_ip):
+                    if address_in_network(hostname, proxy_ip):
                         return True
-                elif parsed.hostname == proxy_ip:
-                    # If no_proxy ip was defined in plain IP notation instead of cidr notation &
-                    # matches the IP of the index
+                elif hostname == proxy_ip:
                     return True
         else:
-            host_with_port = parsed.hostname
-            if parsed.port:
-                host_with_port += f":{parsed.port}"
-
+            host_with_port = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
             for host in no_proxy:
-                if parsed.hostname.endswith(host) or host_with_port.endswith(host):
-                    # The URL does match something in no_proxy, so we don't want
-                    # to apply the proxies on this URL.
+                if hostname.endswith(host) or host_with_port.endswith(host):
                     return True
 
-    with set_environ("no_proxy", no_proxy_arg):
-        # parsed.hostname can be `None` in cases such as a file URI.
-        try:
-            bypass = proxy_bypass(parsed.hostname)
-        except (TypeError, socket.gaierror):
-            bypass = False
-
-    if bypass:
-        return True
-
-    return False
+    try:
+        return proxy_bypass(hostname)
+    except (TypeError, socket.gaierror):
+        return False
 
 
 def get_environ_proxies(url, no_proxy=None):
@@ -832,10 +808,7 @@ def get_environ_proxies(url, no_proxy=None):
 
     :rtype: dict
     """
-    if should_bypass_proxies(url, no_proxy=no_proxy):
-        return {}
-    else:
-        return getproxies()
+    return {} if should_bypass_proxies(url, no_proxy=no_proxy) else getproxies()
 
 
 def select_proxy(url, proxies):
@@ -872,23 +845,16 @@ def resolve_proxies(request, proxies, trust_env=True):
     :param request: Request or PreparedRequest
     :param proxies: A dictionary of schemes or schemes and hosts to proxy URLs
     :param trust_env: Boolean declaring whether to trust environment configs
-
     :rtype: dict
     """
-    proxies = proxies if proxies is not None else {}
-    url = request.url
-    scheme = urlparse(url).scheme
-    no_proxy = proxies.get("no_proxy")
-    new_proxies = proxies.copy()
-
-    if trust_env and not should_bypass_proxies(url, no_proxy=no_proxy):
-        environ_proxies = get_environ_proxies(url, no_proxy=no_proxy)
-
-        proxy = environ_proxies.get(scheme, environ_proxies.get("all"))
-
+    proxies = proxies or {}
+    if trust_env and not should_bypass_proxies(request.url, no_proxy=proxies.get("no_proxy")):
+        environ_proxies = get_environ_proxies(request.url, no_proxy=proxies.get("no_proxy"))
+        proxy = environ_proxies.get(urlparse(request.url).scheme) or environ_proxies.get("all")
         if proxy:
-            new_proxies.setdefault(scheme, proxy)
-    return new_proxies
+            proxies.setdefault(urlparse(request.url).scheme, proxy)
+
+    return proxies
 
 
 def default_user_agent(name="python-requests"):
