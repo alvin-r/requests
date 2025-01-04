@@ -458,7 +458,8 @@ def create_cookie(name, value, **kwargs):
     By default, the pair of `name` and `value` will be set for the domain ''
     and sent on every request (this is sometimes called a "supercookie").
     """
-    result = {
+    # Default cookie attributes
+    defaults = {
         "version": 0,
         "name": name,
         "value": value,
@@ -474,19 +475,23 @@ def create_cookie(name, value, **kwargs):
         "rfc2109": False,
     }
 
-    badargs = set(kwargs) - set(result)
-    if badargs:
-        raise TypeError(
-            f"create_cookie() got unexpected keyword arguments: {list(badargs)}"
-        )
+    # Check for unexpected keyword arguments
+    for key in kwargs:
+        if key not in defaults:
+            raise TypeError(
+                f"create_cookie() got unexpected keyword argument: '{key}'"
+            )
 
-    result.update(kwargs)
-    result["port_specified"] = bool(result["port"])
-    result["domain_specified"] = bool(result["domain"])
-    result["domain_initial_dot"] = result["domain"].startswith(".")
-    result["path_specified"] = bool(result["path"])
+    # Update default with any specified additional arguments
+    defaults.update(kwargs)
 
-    return cookielib.Cookie(**result)
+    # Compute additional required properties for cookie
+    defaults["port_specified"] = defaults["port"] is not None
+    defaults["domain_specified"] = bool(defaults["domain"])
+    defaults["domain_initial_dot"] = defaults["domain"].startswith(".")
+    defaults["path_specified"] = defaults["path"] != "/"
+
+    return cookielib.Cookie(**defaults)
 
 
 def morsel_to_cookie(morsel):
