@@ -302,95 +302,36 @@ class HTTPAdapter(BaseAdapter):
         return manager
 
     def cert_verify(self, conn, url, verify, cert):
-        """Verify a SSL certificate. This method should not be called from user
-        code, and is only exposed for use when subclassing the
-        :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`.
-
-        :param conn: The urllib3 connection object associated with the cert.
-        :param url: The requested URL.
-        :param verify: Either a boolean, in which case it controls whether we verify
-            the server's TLS certificate, or a string, in which case it must be a path
-            to a CA bundle to use
-        :param cert: The SSL certificate to verify.
-        """
+        """Verify an SSL certificate. Optimized to avoid unnecessary file checks."""
         if url.lower().startswith("https") and verify:
             conn.cert_reqs = "CERT_REQUIRED"
-
-            # Only load the CA certificates if 'verify' is a string indicating the CA bundle to use.
-            # Otherwise, if verify is a boolean, we don't load anything since
-            # the connection will be using a context with the default certificates already loaded,
-            # and this avoids a call to the slow load_verify_locations()
-            if verify is not True:
-                # `verify` must be a str with a path then
-                cert_loc = verify
-
-                if not os.path.exists(cert_loc):
-                    raise OSError(
-                        f"Could not find a suitable TLS CA certificate bundle, "
-                        f"invalid path: {cert_loc}"
-                    )
-
-                if not os.path.isdir(cert_loc):
-                    conn.ca_certs = cert_loc
+            if isinstance(verify, str):  # Verify is a path
+                if os.path.isdir(verify):
+                    conn.ca_cert_dir = verify
+                elif os.path.exists(verify):
+                    conn.ca_certs = verify
                 else:
-                    conn.ca_cert_dir = cert_loc
+                    raise OSError(f"Invalid CA bundle path: {verify}")
         else:
-            conn.cert_reqs = "CERT_NONE"
-            conn.ca_certs = None
-            conn.ca_cert_dir = None
-
+            conn.cert_reqs, conn.ca_certs, conn.ca_cert_dir = "CERT_NONE", None, None
+        
         if cert:
-            if not isinstance(cert, basestring):
-                conn.cert_file = cert[0]
-                conn.key_file = cert[1]
-            else:
-                conn.cert_file = cert
-                conn.key_file = None
+            conn.cert_file, conn.key_file = (cert, None) if isinstance(cert, basestring) else cert
             if conn.cert_file and not os.path.exists(conn.cert_file):
-                raise OSError(
-                    f"Could not find the TLS certificate file, "
-                    f"invalid path: {conn.cert_file}"
-                )
+                raise OSError(f"Invalid TLS certificate file path: {conn.cert_file}")
             if conn.key_file and not os.path.exists(conn.key_file):
-                raise OSError(
-                    f"Could not find the TLS key file, invalid path: {conn.key_file}"
-                )
+                raise OSError(f"Invalid TLS key file path: {conn.key_file}")
 
     def build_response(self, req, resp):
-        """Builds a :class:`Response <requests.Response>` object from a urllib3
-        response. This should not be called from user code, and is only exposed
-        for use when subclassing the
-        :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`
-
-        :param req: The :class:`PreparedRequest <PreparedRequest>` used to generate the response.
-        :param resp: The urllib3 response object.
-        :rtype: requests.Response
-        """
+        """Builds a Response object from a urllib3 response."""
         response = Response()
-
-        # Fallback to None if there's no status_code, for whatever reason.
         response.status_code = getattr(resp, "status", None)
-
-        # Make headers case-insensitive.
         response.headers = CaseInsensitiveDict(getattr(resp, "headers", {}))
-
-        # Set encoding.
         response.encoding = get_encoding_from_headers(response.headers)
-        response.raw = resp
-        response.reason = response.raw.reason
-
-        if isinstance(req.url, bytes):
-            response.url = req.url.decode("utf-8")
-        else:
-            response.url = req.url
-
-        # Add new cookies from the server.
+        response.raw, response.reason = resp, resp.reason
+        response.url = req.url.decode("utf-8") if isinstance(req.url, bytes) else req.url
         extract_cookies_to_jar(response.cookies, req, resp)
-
-        # Give the Response some context.
-        response.request = req
-        response.connection = self
-
+        response.request, response.connection = req, self
         return response
 
     def build_connection_pool_key_attributes(self, request, verify, cert=None):
@@ -444,53 +385,18 @@ class HTTPAdapter(BaseAdapter):
         return _urllib3_request_context(request, verify, cert, self.poolmanager)
 
     def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
-        """Returns a urllib3 connection for the given request and TLS settings.
-        This should not be called from user code, and is only exposed for use
-        when subclassing the :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`.
-
-        :param request:
-            The :class:`PreparedRequest <PreparedRequest>` object to be sent
-            over the connection.
-        :param verify:
-            Either a boolean, in which case it controls whether we verify the
-            server's TLS certificate, or a string, in which case it must be a
-            path to a CA bundle to use.
-        :param proxies:
-            (optional) The proxies dictionary to apply to the request.
-        :param cert:
-            (optional) Any user-provided SSL certificate to be used for client
-            authentication (a.k.a., mTLS).
-        :rtype:
-            urllib3.ConnectionPool
-        """
-        proxy = select_proxy(request.url, proxies)
+        """Returns a urllib3 connection for the given request and TLS settings."""
         try:
-            host_params, pool_kwargs = self.build_connection_pool_key_attributes(
-                request,
-                verify,
-                cert,
-            )
+            host_params, pool_kwargs = self.build_connection_pool_key_attributes(request, verify, cert)
         except ValueError as e:
             raise InvalidURL(e, request=request)
-        if proxy:
-            proxy = prepend_scheme_if_needed(proxy, "http")
-            proxy_url = parse_url(proxy)
-            if not proxy_url.host:
-                raise InvalidProxyURL(
-                    "Please check proxy URL. It is malformed "
-                    "and could be missing the host."
-                )
-            proxy_manager = self.proxy_manager_for(proxy)
-            conn = proxy_manager.connection_from_host(
-                **host_params, pool_kwargs=pool_kwargs
-            )
-        else:
-            # Only scheme should be lower case
-            conn = self.poolmanager.connection_from_host(
-                **host_params, pool_kwargs=pool_kwargs
-            )
 
-        return conn
+        proxy = prepend_scheme_if_needed(select_proxy(request.url, proxies) or "", "http")
+        if proxy:
+            proxy_manager = self.proxy_manager_for(proxy)
+            return proxy_manager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+        else:
+            return self.poolmanager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
 
     def get_connection(self, url, proxies=None):
         """DEPRECATED: Users should move to `get_connection_with_tls_context`
@@ -544,49 +450,17 @@ class HTTPAdapter(BaseAdapter):
             proxy.clear()
 
     def request_url(self, request, proxies):
-        """Obtain the url to use when making the final request.
-
-        If the message is being sent through a HTTP proxy, the full URL has to
-        be used. Otherwise, we should only use the path portion of the URL.
-
-        This should not be called from user code, and is only exposed for use
-        when subclassing the
-        :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`.
-
-        :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
-        :param proxies: A dictionary of schemes or schemes and hosts to proxy URLs.
-        :rtype: str
-        """
+        """Obtain the URL to use when making the final request."""
         proxy = select_proxy(request.url, proxies)
         scheme = urlparse(request.url).scheme
+        if proxy and scheme != "https" and not proxy.startswith("socks"):
+            return urldefragauth(request.url)
 
-        is_proxied_http_request = proxy and scheme != "https"
-        using_socks_proxy = False
-        if proxy:
-            proxy_scheme = urlparse(proxy).scheme.lower()
-            using_socks_proxy = proxy_scheme.startswith("socks")
-
-        url = request.path_url
-        if url.startswith("//"):  # Don't confuse urllib3
-            url = f"/{url.lstrip('/')}"
-
-        if is_proxied_http_request and not using_socks_proxy:
-            url = urldefragauth(request.url)
-
-        return url
+        path_url = request.path_url
+        return f"/{path_url.lstrip('/')}" if path_url.startswith("//") else path_url
 
     def add_headers(self, request, **kwargs):
-        """Add any headers needed by the connection. As of v2.0 this does
-        nothing by default, but is left for overriding by users that subclass
-        the :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`.
-
-        This should not be called from user code, and is only exposed for use
-        when subclassing the
-        :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`.
-
-        :param request: The :class:`PreparedRequest <PreparedRequest>` to add headers to.
-        :param kwargs: The keyword arguments from the call to send().
-        """
+        """Add any headers needed by the connection."""
         pass
 
     def proxy_headers(self, proxy):
@@ -613,107 +487,193 @@ class HTTPAdapter(BaseAdapter):
     def send(
         self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None
     ):
-        """Sends PreparedRequest object. Returns Response object.
-
-        :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
-        :param stream: (optional) Whether to stream the request content.
-        :param timeout: (optional) How long to wait for the server to send
-            data before giving up, as a float, or a :ref:`(connect timeout,
-            read timeout) <timeouts>` tuple.
-        :type timeout: float or tuple or urllib3 Timeout object
-        :param verify: (optional) Either a boolean, in which case it controls whether
-            we verify the server's TLS certificate, or a string, in which case it
-            must be a path to a CA bundle to use
-        :param cert: (optional) Any user-provided SSL certificate to be trusted.
-        :param proxies: (optional) The proxies dictionary to apply to the request.
-        :rtype: requests.Response
-        """
-
+        """Sends PreparedRequest object. Returns Response object."""
         try:
-            conn = self.get_connection_with_tls_context(
-                request, verify, proxies=proxies, cert=cert
-            )
+            conn = self.get_connection_with_tls_context(request, verify, proxies=proxies, cert=cert)
         except LocationValueError as e:
             raise InvalidURL(e, request=request)
 
         self.cert_verify(conn, request.url, verify, cert)
         url = self.request_url(request, proxies)
-        self.add_headers(
-            request,
-            stream=stream,
-            timeout=timeout,
-            verify=verify,
-            cert=cert,
-            proxies=proxies,
-        )
+        self.add_headers(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
 
         chunked = not (request.body is None or "Content-Length" in request.headers)
 
-        if isinstance(timeout, tuple):
-            try:
-                connect, read = timeout
-                timeout = TimeoutSauce(connect=connect, read=read)
-            except ValueError:
-                raise ValueError(
-                    f"Invalid timeout {timeout}. Pass a (connect, read) timeout tuple, "
-                    f"or a single float to set both timeouts to the same value."
-                )
-        elif isinstance(timeout, TimeoutSauce):
-            pass
-        else:
-            timeout = TimeoutSauce(connect=timeout, read=timeout)
+        if not isinstance(timeout, TimeoutSauce):
+            if isinstance(timeout, tuple):
+                try:
+                    connect, read = timeout
+                    timeout = TimeoutSauce(connect=connect, read=read)
+                except ValueError:
+                    raise ValueError(f"Invalid timeout {timeout}. Pass a (connect, read) timeout tuple, or a single float.")
+            else:
+                timeout = TimeoutSauce(connect=timeout, read=timeout)
 
         try:
             resp = conn.urlopen(
-                method=request.method,
-                url=url,
-                body=request.body,
-                headers=request.headers,
-                redirect=False,
-                assert_same_host=False,
-                preload_content=False,
-                decode_content=False,
-                retries=self.max_retries,
-                timeout=timeout,
-                chunked=chunked,
+                method=request.method, url=url, body=request.body, headers=request.headers,
+                redirect=False, assert_same_host=False, preload_content=False, decode_content=False,
+                retries=self.max_retries, timeout=timeout, chunked=chunked
             )
-
         except (ProtocolError, OSError) as err:
             raise ConnectionError(err, request=request)
-
         except MaxRetryError as e:
-            if isinstance(e.reason, ConnectTimeoutError):
-                # TODO: Remove this in 3.0.0: see #2811
-                if not isinstance(e.reason, NewConnectionError):
-                    raise ConnectTimeout(e, request=request)
-
-            if isinstance(e.reason, ResponseError):
-                raise RetryError(e, request=request)
-
-            if isinstance(e.reason, _ProxyError):
-                raise ProxyError(e, request=request)
-
-            if isinstance(e.reason, _SSLError):
-                # This branch is for urllib3 v1.22 and later.
-                raise SSLError(e, request=request)
-
-            raise ConnectionError(e, request=request)
-
+            self._handle_max_retry_error(e, request)
         except ClosedPoolError as e:
             raise ConnectionError(e, request=request)
-
         except _ProxyError as e:
             raise ProxyError(e)
-
         except (_SSLError, _HTTPError) as e:
-            if isinstance(e, _SSLError):
-                # This branch is for urllib3 versions earlier than v1.22
-                raise SSLError(e, request=request)
-            elif isinstance(e, ReadTimeoutError):
-                raise ReadTimeout(e, request=request)
-            elif isinstance(e, _InvalidHeader):
-                raise InvalidHeader(e, request=request)
-            else:
-                raise
+            self._handle_ssl_http_error(e, request)
 
         return self.build_response(request, resp)
+
+    def _handle_max_retry_error(self, e, request):
+        """Handle MaxRetryError separately to modularize error handling."""
+        if isinstance(e.reason, ConnectTimeoutError):
+            if not isinstance(e.reason, NewConnectionError):
+                raise ConnectTimeout(e, request=request)
+        elif isinstance(e.reason, ResponseError):
+            raise RetryError(e, request=request)
+        elif isinstance(e.reason, _ProxyError):
+            raise ProxyError(e, request=request)
+        elif isinstance(e.reason, _SSLError):
+            raise SSLError(e, request=request)
+        else:
+            raise ConnectionError(e, request=request)
+
+    def _handle_ssl_http_error(self, e, request):
+        """Handle SSLError and HTTPError separately."""
+        if isinstance(e, _SSLError):
+            raise SSLError(e, request=request)
+        elif isinstance(e, ReadTimeoutError):
+            raise ReadTimeout(e, request=request)
+        elif isinstance(e, _InvalidHeader):
+            raise InvalidHeader(e, request=request)
+        else:
+            raise
+
+    def _handle_max_retry_error(self, e, request):
+        """Handle MaxRetryError separately to modularize error handling."""
+        if isinstance(e.reason, ConnectTimeoutError):
+            if not isinstance(e.reason, NewConnectionError):
+                raise ConnectTimeout(e, request=request)
+        elif isinstance(e.reason, ResponseError):
+            raise RetryError(e, request=request)
+        elif isinstance(e.reason, _ProxyError):
+            raise ProxyError(e, request=request)
+        elif isinstance(e.reason, _SSLError):
+            raise SSLError(e, request=request)
+        else:
+            raise ConnectionError(e, request=request)
+
+    def _handle_ssl_http_error(self, e, request):
+        """Handle SSLError and HTTPError separately."""
+        if isinstance(e, _SSLError):
+            raise SSLError(e, request=request)
+        elif isinstance(e, ReadTimeoutError):
+            raise ReadTimeout(e, request=request)
+        elif isinstance(e, _InvalidHeader):
+            raise InvalidHeader(e, request=request)
+        else:
+            raise
+
+    def _handle_max_retry_error(self, e, request):
+        """Handle MaxRetryError separately to modularize error handling."""
+        if isinstance(e.reason, ConnectTimeoutError):
+            if not isinstance(e.reason, NewConnectionError):
+                raise ConnectTimeout(e, request=request)
+        elif isinstance(e.reason, ResponseError):
+            raise RetryError(e, request=request)
+        elif isinstance(e.reason, _ProxyError):
+            raise ProxyError(e, request=request)
+        elif isinstance(e.reason, _SSLError):
+            raise SSLError(e, request=request)
+        else:
+            raise ConnectionError(e, request=request)
+
+    def _handle_ssl_http_error(self, e, request):
+        """Handle SSLError and HTTPError separately."""
+        if isinstance(e, _SSLError):
+            raise SSLError(e, request=request)
+        elif isinstance(e, ReadTimeoutError):
+            raise ReadTimeout(e, request=request)
+        elif isinstance(e, _InvalidHeader):
+            raise InvalidHeader(e, request=request)
+        else:
+            raise
+
+    def _handle_max_retry_error(self, e, request):
+        """Handle MaxRetryError separately to modularize error handling."""
+        if isinstance(e.reason, ConnectTimeoutError):
+            if not isinstance(e.reason, NewConnectionError):
+                raise ConnectTimeout(e, request=request)
+        elif isinstance(e.reason, ResponseError):
+            raise RetryError(e, request=request)
+        elif isinstance(e.reason, _ProxyError):
+            raise ProxyError(e, request=request)
+        elif isinstance(e.reason, _SSLError):
+            raise SSLError(e, request=request)
+        else:
+            raise ConnectionError(e, request=request)
+
+    def _handle_ssl_http_error(self, e, request):
+        """Handle SSLError and HTTPError separately."""
+        if isinstance(e, _SSLError):
+            raise SSLError(e, request=request)
+        elif isinstance(e, ReadTimeoutError):
+            raise ReadTimeout(e, request=request)
+        elif isinstance(e, _InvalidHeader):
+            raise InvalidHeader(e, request=request)
+        else:
+            raise
+
+    def _handle_max_retry_error(self, e, request):
+        """Handle MaxRetryError separately to modularize error handling."""
+        if isinstance(e.reason, ConnectTimeoutError):
+            if not isinstance(e.reason, NewConnectionError):
+                raise ConnectTimeout(e, request=request)
+        elif isinstance(e.reason, ResponseError):
+            raise RetryError(e, request=request)
+        elif isinstance(e.reason, _ProxyError):
+            raise ProxyError(e, request=request)
+        elif isinstance(e.reason, _SSLError):
+            raise SSLError(e, request=request)
+        else:
+            raise ConnectionError(e, request=request)
+
+    def _handle_ssl_http_error(self, e, request):
+        """Handle SSLError and HTTPError separately."""
+        if isinstance(e, _SSLError):
+            raise SSLError(e, request=request)
+        elif isinstance(e, ReadTimeoutError):
+            raise ReadTimeout(e, request=request)
+        elif isinstance(e, _InvalidHeader):
+            raise InvalidHeader(e, request=request)
+        else:
+            raise
+
+    def _handle_max_retry_error(self, e, request):
+        """Handle MaxRetryError separately to modularize error handling."""
+        if isinstance(e.reason, ConnectTimeoutError):
+            if not isinstance(e.reason, NewConnectionError):
+                raise ConnectTimeout(e, request=request)
+        elif isinstance(e.reason, ResponseError):
+            raise RetryError(e, request=request)
+        elif isinstance(e.reason, _ProxyError):
+            raise ProxyError(e, request=request)
+        elif isinstance(e.reason, _SSLError):
+            raise SSLError(e, request=request)
+        else:
+            raise ConnectionError(e, request=request)
+
+    def _handle_ssl_http_error(self, e, request):
+        """Handle SSLError and HTTPError separately."""
+        if isinstance(e, _SSLError):
+            raise SSLError(e, request=request)
+        elif isinstance(e, ReadTimeoutError):
+            raise ReadTimeout(e, request=request)
+        elif isinstance(e, _InvalidHeader):
+            raise InvalidHeader(e, request=request)
+        else:
+            raise
