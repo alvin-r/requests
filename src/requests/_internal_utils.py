@@ -27,12 +27,11 @@ def to_native_string(string, encoding="ascii"):
     that string in the native string type, encoding and decoding where
     necessary. This assumes ASCII unless told otherwise.
     """
+    # Directly return if the string is already of the expected type
     if isinstance(string, builtin_str):
-        out = string
-    else:
-        out = string.decode(encoding)
-
-    return out
+        return string
+    # Decode only when necessary
+    return string.decode(encoding)
 
 
 def unicode_is_ascii(u_string):
