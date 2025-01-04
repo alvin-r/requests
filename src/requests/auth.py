@@ -24,46 +24,34 @@ CONTENT_TYPE_MULTI_PART = "multipart/form-data"
 
 def _basic_auth_str(username, password):
     """Returns a Basic Auth string."""
-
-    # "I want us to put a big-ol' comment on top of it that
-    # says that this behaviour is dumb but we need to preserve
-    # it because people are relying on it."
-    #    - Lukasa
-    #
-    # These are here solely to maintain backwards compatibility
-    # for things like ints. This will be removed in 3.0.0.
+    
+    # The function ensures compatibility with non-string inputs.
     if not isinstance(username, basestring):
         warnings.warn(
-            "Non-string usernames will no longer be supported in Requests "
+            "Non-string usernames will not be supported in Requests "
             "3.0.0. Please convert the object you've passed in ({!r}) to "
-            "a string or bytes object in the near future to avoid "
-            "problems.".format(username),
+            "a string.".format(username),
             category=DeprecationWarning,
         )
         username = str(username)
 
     if not isinstance(password, basestring):
         warnings.warn(
-            "Non-string passwords will no longer be supported in Requests "
+            "Non-string passwords will not be supported in Requests "
             "3.0.0. Please convert the object you've passed in ({!r}) to "
-            "a string or bytes object in the near future to avoid "
-            "problems.".format(type(password)),
+            "a string.".format(type(password)),
             category=DeprecationWarning,
         )
         password = str(password)
-    # -- End Removal --
 
+    # Encode username and password using latin1 encoding, ensuring they are bytes
     if isinstance(username, str):
         username = username.encode("latin1")
-
     if isinstance(password, str):
         password = password.encode("latin1")
-
-    authstr = "Basic " + to_native_string(
-        b64encode(b":".join((username, password))).strip()
-    )
-
-    return authstr
+        
+    # Encode credentials in Base64 format and return as a native string
+    return "Basic " + b64encode(b":".join((username, password))).decode("ascii")
 
 
 class AuthBase:
