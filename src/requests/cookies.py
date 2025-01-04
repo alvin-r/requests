@@ -47,23 +47,25 @@ class MockRequest:
         return self.get_host()
 
     def get_full_url(self):
-        # Only return the response's URL if the user hadn't set the Host
-        # header
-        if not self._r.headers.get("Host"):
+        # Try retrieving 'Host' header only once and store the result to minimize dictionary access
+        host_header = self._r.headers.get("Host")
+        if not host_header:
             return self._r.url
-        # If they did set it, retrieve it and reconstruct the expected domain
-        host = to_native_string(self._r.headers["Host"], encoding="utf-8")
+
+        # Decode hostname once and parse URL only when needed
+        host = to_native_string(host_header, encoding="utf-8")
         parsed = urlparse(self._r.url)
-        # Reconstruct the URL as we expect it
+
+        # Reconstruct and return the URL
         return urlunparse(
-            [
+            (
                 parsed.scheme,
                 host,
                 parsed.path,
                 parsed.params,
                 parsed.query,
                 parsed.fragment,
-            ]
+            )
         )
 
     def is_unverifiable(self):
