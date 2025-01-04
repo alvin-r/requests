@@ -44,7 +44,7 @@ from .exceptions import (
     RetryError,
     SSLError,
 )
-from .models import Response
+from .models import PreparedRequest, Response
 from .structures import CaseInsensitiveDict
 from .utils import (
     DEFAULT_CA_BUNDLE_PATH,
@@ -55,6 +55,7 @@ from .utils import (
     select_proxy,
     urldefragauth,
 )
+from functools import lru_cache
 
 try:
     from urllib3.contrib.socks import SOCKSProxyManager
@@ -95,12 +96,11 @@ def _urllib3_request_context(
 ) -> "(typing.Dict[str, typing.Any], typing.Dict[str, typing.Any])":
     host_params = {}
     pool_kwargs = {}
-    parsed_request_url = urlparse(request.url)
+    parsed_request_url = parse_url(request.url)
     scheme = parsed_request_url.scheme.lower()
     port = parsed_request_url.port
 
-    # Determine if we have and should use our default SSLContext
-    # to optimize performance on standard requests.
+    # Determine if we should use our default SSLContext
     poolmanager_kwargs = getattr(poolmanager, "connection_pool_kw", {})
     has_poolmanager_ssl_context = poolmanager_kwargs.get("ssl_context")
     should_use_default_ssl_context = (
@@ -113,25 +113,31 @@ def _urllib3_request_context(
     elif verify is True and should_use_default_ssl_context:
         pool_kwargs["ssl_context"] = _preloaded_ssl_context
     elif isinstance(verify, str):
-        if not os.path.isdir(verify):
-            pool_kwargs["ca_certs"] = verify
-        else:
+        if os.path.isdir(verify):
             pool_kwargs["ca_cert_dir"] = verify
+        else:
+            pool_kwargs["ca_certs"] = verify
     pool_kwargs["cert_reqs"] = cert_reqs
+
     if client_cert is not None:
         if isinstance(client_cert, tuple) and len(client_cert) == 2:
             pool_kwargs["cert_file"] = client_cert[0]
             pool_kwargs["key_file"] = client_cert[1]
         else:
-            # According to our docs, we allow users to specify just the client
-            # cert path
             pool_kwargs["cert_file"] = client_cert
+
     host_params = {
         "scheme": scheme,
         "host": parsed_request_url.hostname,
         "port": port,
     }
     return host_params, pool_kwargs
+
+
+# Utilize caching for parsed URLs to optimize performance for repeated requests
+@lru_cache(maxsize=128)
+def parse_url(url: str):
+    return urlparse(url)
 
 
 class BaseAdapter:
