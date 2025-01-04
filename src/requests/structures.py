@@ -77,7 +77,9 @@ class CaseInsensitiveDict(MutableMapping):
         return CaseInsensitiveDict(self._store.values())
 
     def __repr__(self):
-        return str(dict(self.items()))
+        # Directly convert the underlying OrderedDict to string
+        # This retains the order without creating an intermediate dict
+        return str({k: v for k, v in self._store.values()})
 
 
 class LookupDict(dict):
