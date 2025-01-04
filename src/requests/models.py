@@ -714,7 +714,12 @@ class Response:
         if not self._content_consumed:
             self.content
 
-        return {attr: getattr(self, attr, None) for attr in self.__attrs__}
+        # Use vars(self) to quickly access the __dict__ of the instance.
+        instance_vars = vars(self)
+        
+        # Use list comprehension to filter the attributes
+        # which are available in __attrs__. This avoids calling getattr repeatedly.
+        return {attr: instance_vars.get(attr, None) for attr in self.__attrs__}
 
     def __setstate__(self, state):
         for name, value in state.items():
