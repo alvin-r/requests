@@ -17,7 +17,6 @@ from urllib3.exceptions import InvalidHeader as _InvalidHeader
 from urllib3.exceptions import (
     LocationValueError,
     MaxRetryError,
-    NewConnectionError,
     ProtocolError,
 )
 from urllib3.exceptions import ProxyError as _ProxyError
@@ -559,16 +558,11 @@ class HTTPAdapter(BaseAdapter):
         """
         proxy = select_proxy(request.url, proxies)
         scheme = urlparse(request.url).scheme
-
         is_proxied_http_request = proxy and scheme != "https"
-        using_socks_proxy = False
-        if proxy:
-            proxy_scheme = urlparse(proxy).scheme.lower()
-            using_socks_proxy = proxy_scheme.startswith("socks")
-
-        url = request.path_url
-        if url.startswith("//"):  # Don't confuse urllib3
-            url = f"/{url.lstrip('/')}"
+        using_socks_proxy = proxy and urlparse(proxy).scheme.lower().startswith("socks")
+        
+        url = request.path_url.lstrip('/')
+        url = f'/{url}' if url.startswith("//") else url
 
         if is_proxied_http_request and not using_socks_proxy:
             url = urldefragauth(request.url)
@@ -628,7 +622,6 @@ class HTTPAdapter(BaseAdapter):
         :param proxies: (optional) The proxies dictionary to apply to the request.
         :rtype: requests.Response
         """
-
         try:
             conn = self.get_connection_with_tls_context(
                 request, verify, proxies=proxies, cert=cert
@@ -638,18 +631,12 @@ class HTTPAdapter(BaseAdapter):
 
         self.cert_verify(conn, request.url, verify, cert)
         url = self.request_url(request, proxies)
-        self.add_headers(
-            request,
-            stream=stream,
-            timeout=timeout,
-            verify=verify,
-            cert=cert,
-            proxies=proxies,
-        )
 
-        chunked = not (request.body is None or "Content-Length" in request.headers)
+        chunked = request.body is not None and "Content-Length" not in request.headers
 
-        if isinstance(timeout, tuple):
+        if isinstance(timeout, (int, float)):
+            timeout = TimeoutSauce(connect=timeout, read=timeout)
+        elif isinstance(timeout, tuple):
             try:
                 connect, read = timeout
                 timeout = TimeoutSauce(connect=connect, read=read)
@@ -658,10 +645,6 @@ class HTTPAdapter(BaseAdapter):
                     f"Invalid timeout {timeout}. Pass a (connect, read) timeout tuple, "
                     f"or a single float to set both timeouts to the same value."
                 )
-        elif isinstance(timeout, TimeoutSauce):
-            pass
-        else:
-            timeout = TimeoutSauce(connect=timeout, read=timeout)
 
         try:
             resp = conn.urlopen(
@@ -677,43 +660,28 @@ class HTTPAdapter(BaseAdapter):
                 timeout=timeout,
                 chunked=chunked,
             )
-
+        
         except (ProtocolError, OSError) as err:
             raise ConnectionError(err, request=request)
 
         except MaxRetryError as e:
-            if isinstance(e.reason, ConnectTimeoutError):
-                # TODO: Remove this in 3.0.0: see #2811
-                if not isinstance(e.reason, NewConnectionError):
-                    raise ConnectTimeout(e, request=request)
-
-            if isinstance(e.reason, ResponseError):
-                raise RetryError(e, request=request)
-
-            if isinstance(e.reason, _ProxyError):
-                raise ProxyError(e, request=request)
-
-            if isinstance(e.reason, _SSLError):
-                # This branch is for urllib3 v1.22 and later.
-                raise SSLError(e, request=request)
-
-            raise ConnectionError(e, request=request)
-
-        except ClosedPoolError as e:
-            raise ConnectionError(e, request=request)
-
-        except _ProxyError as e:
-            raise ProxyError(e)
-
-        except (_SSLError, _HTTPError) as e:
-            if isinstance(e, _SSLError):
-                # This branch is for urllib3 versions earlier than v1.22
-                raise SSLError(e, request=request)
-            elif isinstance(e, ReadTimeoutError):
-                raise ReadTimeout(e, request=request)
-            elif isinstance(e, _InvalidHeader):
-                raise InvalidHeader(e, request=request)
-            else:
-                raise
+            error_mapping = {
+                ConnectTimeoutError: ConnectTimeout,
+                ResponseError: RetryError,
+                _ProxyError: ProxyError,
+                _SSLError: SSLError
+            }
+            exception = error_mapping.get(type(e.reason), ConnectionError)
+            if exception:
+                raise exception(e, request=request)
+        
+        except (ClosedPoolError, _ProxyError, _SSLError, _HTTPError) as e:
+            raise {
+                ClosedPoolError: ConnectionError,
+                _ProxyError: ProxyError,
+                _SSLError: SSLError if isinstance(e, _SSLError) else ConnectionError,
+                ReadTimeoutError: ReadTimeout,
+                _InvalidHeader: InvalidHeader,
+            }.get(type(e), ConnectionError)(e, request=request)
 
         return self.build_response(request, resp)
