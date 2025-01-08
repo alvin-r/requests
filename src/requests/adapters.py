@@ -313,39 +313,28 @@ class HTTPAdapter(BaseAdapter):
             to a CA bundle to use
         :param cert: The SSL certificate to verify.
         """
-        if url.lower().startswith("https") and verify:
+        if verify and url.lower().startswith("https"):
             conn.cert_reqs = "CERT_REQUIRED"
-
-            # Only load the CA certificates if 'verify' is a string indicating the CA bundle to use.
-            # Otherwise, if verify is a boolean, we don't load anything since
-            # the connection will be using a context with the default certificates already loaded,
-            # and this avoids a call to the slow load_verify_locations()
-            if verify is not True:
-                # `verify` must be a str with a path then
+            if isinstance(verify, str):
+                # `verify` is a string with a path
                 cert_loc = verify
-
                 if not os.path.exists(cert_loc):
                     raise OSError(
                         f"Could not find a suitable TLS CA certificate bundle, "
                         f"invalid path: {cert_loc}"
                     )
 
-                if not os.path.isdir(cert_loc):
-                    conn.ca_certs = cert_loc
-                else:
+                if os.path.isdir(cert_loc):
                     conn.ca_cert_dir = cert_loc
+                else:
+                    conn.ca_certs = cert_loc
         else:
             conn.cert_reqs = "CERT_NONE"
             conn.ca_certs = None
             conn.ca_cert_dir = None
 
         if cert:
-            if not isinstance(cert, basestring):
-                conn.cert_file = cert[0]
-                conn.key_file = cert[1]
-            else:
-                conn.cert_file = cert
-                conn.key_file = None
+            conn.cert_file, conn.key_file = (cert, None) if isinstance(cert, basestring) else cert
             if conn.cert_file and not os.path.exists(conn.cert_file):
                 raise OSError(
                     f"Could not find the TLS certificate file, "
@@ -367,30 +356,15 @@ class HTTPAdapter(BaseAdapter):
         :rtype: requests.Response
         """
         response = Response()
-
-        # Fallback to None if there's no status_code, for whatever reason.
         response.status_code = getattr(resp, "status", None)
-
-        # Make headers case-insensitive.
         response.headers = CaseInsensitiveDict(getattr(resp, "headers", {}))
-
-        # Set encoding.
         response.encoding = get_encoding_from_headers(response.headers)
         response.raw = resp
         response.reason = response.raw.reason
-
-        if isinstance(req.url, bytes):
-            response.url = req.url.decode("utf-8")
-        else:
-            response.url = req.url
-
-        # Add new cookies from the server.
+        response.url = req.url if not isinstance(req.url, bytes) else req.url.decode("utf-8")
         extract_cookies_to_jar(response.cookies, req, resp)
-
-        # Give the Response some context.
         response.request = req
         response.connection = self
-
         return response
 
     def build_connection_pool_key_attributes(self, request, verify, cert=None):
@@ -485,11 +459,9 @@ class HTTPAdapter(BaseAdapter):
                 **host_params, pool_kwargs=pool_kwargs
             )
         else:
-            # Only scheme should be lower case
             conn = self.poolmanager.connection_from_host(
                 **host_params, pool_kwargs=pool_kwargs
             )
-
         return conn
 
     def get_connection(self, url, proxies=None):
@@ -557,23 +529,17 @@ class HTTPAdapter(BaseAdapter):
         :param proxies: A dictionary of schemes or schemes and hosts to proxy URLs.
         :rtype: str
         """
+        url_parts = urlparse(request.url)
         proxy = select_proxy(request.url, proxies)
-        scheme = urlparse(request.url).scheme
+        scheme_is_https = url_parts.scheme.lower() == "https"
 
-        is_proxied_http_request = proxy and scheme != "https"
-        using_socks_proxy = False
-        if proxy:
-            proxy_scheme = urlparse(proxy).scheme.lower()
-            using_socks_proxy = proxy_scheme.startswith("socks")
+        is_proxied_http_request = proxy and not scheme_is_https
+        using_socks_proxy = proxy and proxy.lower().startswith("socks")
 
-        url = request.path_url
-        if url.startswith("//"):  # Don't confuse urllib3
-            url = f"/{url.lstrip('/')}"
-
+        url = request.path_url.lstrip("/")
         if is_proxied_http_request and not using_socks_proxy:
-            url = urldefragauth(request.url)
-
-        return url
+            return urldefragauth(request.url)
+        return f"/{url}"
 
     def add_headers(self, request, **kwargs):
         """Add any headers needed by the connection. As of v2.0 this does
@@ -628,7 +594,6 @@ class HTTPAdapter(BaseAdapter):
         :param proxies: (optional) The proxies dictionary to apply to the request.
         :rtype: requests.Response
         """
-
         try:
             conn = self.get_connection_with_tls_context(
                 request, verify, proxies=proxies, cert=cert
@@ -646,20 +611,18 @@ class HTTPAdapter(BaseAdapter):
             cert=cert,
             proxies=proxies,
         )
-
         chunked = not (request.body is None or "Content-Length" in request.headers)
 
-        if isinstance(timeout, tuple):
-            try:
-                connect, read = timeout
-                timeout = TimeoutSauce(connect=connect, read=read)
-            except ValueError:
-                raise ValueError(
-                    f"Invalid timeout {timeout}. Pass a (connect, read) timeout tuple, "
-                    f"or a single float to set both timeouts to the same value."
-                )
-        elif isinstance(timeout, TimeoutSauce):
-            pass
+        if isinstance(timeout, (tuple, TimeoutSauce)):
+            if isinstance(timeout, tuple):
+                try:
+                    connect, read = timeout
+                    timeout = TimeoutSauce(connect=connect, read=read)
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid timeout {timeout}. Pass a (connect, read) timeout tuple, "
+                        f"or a single float to set both timeouts to the same value."
+                    )
         else:
             timeout = TimeoutSauce(connect=timeout, read=timeout)
 
@@ -677,37 +640,25 @@ class HTTPAdapter(BaseAdapter):
                 timeout=timeout,
                 chunked=chunked,
             )
-
         except (ProtocolError, OSError) as err:
             raise ConnectionError(err, request=request)
-
         except MaxRetryError as e:
-            if isinstance(e.reason, ConnectTimeoutError):
-                # TODO: Remove this in 3.0.0: see #2811
-                if not isinstance(e.reason, NewConnectionError):
-                    raise ConnectTimeout(e, request=request)
-
-            if isinstance(e.reason, ResponseError):
+            if isinstance(e.reason, ConnectTimeoutError) and not isinstance(e.reason, NewConnectionError):
+                raise ConnectTimeout(e, request=request)
+            elif isinstance(e.reason, ResponseError):
                 raise RetryError(e, request=request)
-
-            if isinstance(e.reason, _ProxyError):
+            elif isinstance(e.reason, _ProxyError):
                 raise ProxyError(e, request=request)
-
-            if isinstance(e.reason, _SSLError):
-                # This branch is for urllib3 v1.22 and later.
+            elif isinstance(e.reason, _SSLError):
                 raise SSLError(e, request=request)
-
-            raise ConnectionError(e, request=request)
-
+            else:
+                raise ConnectionError(e, request=request)
         except ClosedPoolError as e:
             raise ConnectionError(e, request=request)
-
         except _ProxyError as e:
             raise ProxyError(e)
-
         except (_SSLError, _HTTPError) as e:
             if isinstance(e, _SSLError):
-                # This branch is for urllib3 versions earlier than v1.22
                 raise SSLError(e, request=request)
             elif isinstance(e, ReadTimeoutError):
                 raise ReadTimeout(e, request=request)
