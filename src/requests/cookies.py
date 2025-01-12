@@ -36,6 +36,14 @@ class MockRequest:
         self._r = request
         self._new_headers = {}
         self.type = urlparse(self._r.url).scheme
+        self._cached_full_url = None
+
+        # Compute and cache values that may be reused
+        self._parsed_url = urlparse(self._r.url)
+        if self._r.headers.get("Host"):
+            self._host = to_native_string(self._r.headers["Host"], encoding="utf-8")
+        else:
+            self._host = None
 
     def get_type(self):
         return self.type
@@ -47,24 +55,26 @@ class MockRequest:
         return self.get_host()
 
     def get_full_url(self):
-        # Only return the response's URL if the user hadn't set the Host
-        # header
-        if not self._r.headers.get("Host"):
-            return self._r.url
-        # If they did set it, retrieve it and reconstruct the expected domain
-        host = to_native_string(self._r.headers["Host"], encoding="utf-8")
-        parsed = urlparse(self._r.url)
-        # Reconstruct the URL as we expect it
-        return urlunparse(
+        # Use cached result if available
+        if self._cached_full_url is not None:
+            return self._cached_full_url
+
+        if not self._host:
+            self._cached_full_url = self._r.url
+            return self._cached_full_url
+
+        # Reconstruct the URL with the host from the headers
+        self._cached_full_url = urlunparse(
             [
-                parsed.scheme,
-                host,
-                parsed.path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment,
+                self._parsed_url.scheme,
+                self._host,
+                self._parsed_url.path,
+                self._parsed_url.params,
+                self._parsed_url.query,
+                self._parsed_url.fragment,
             ]
         )
+        return self._cached_full_url
 
     def is_unverifiable(self):
         return True
