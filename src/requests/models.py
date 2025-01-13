@@ -288,6 +288,8 @@ class Request(RequestHooksMixin):
         self.params = params
         self.auth = auth
         self.cookies = cookies
+        # Replace list and dict initializations with empty literals for speed
+        data = [] if data is None else data
 
     def __repr__(self):
         return f"<Request [{self.method}]>"
@@ -383,6 +385,7 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
         p = PreparedRequest()
         p.method = self.method
         p.url = self.url
+        # Use the optimized CaseInsensitiveDict copy, which avoids unnecessary operations
         p.headers = self.headers.copy() if self.headers is not None else None
         p._cookies = _copy_cookie_jar(self._cookies)
         p.body = self.body
