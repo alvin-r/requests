@@ -58,6 +58,7 @@ from .exceptions import (
     UnrewindableBodyError,
 )
 from .structures import CaseInsensitiveDict
+from functools import lru_cache
 
 NETRC_FILES = (".netrc", "_netrc")
 
@@ -891,6 +892,7 @@ def resolve_proxies(request, proxies, trust_env=True):
     return new_proxies
 
 
+@lru_cache(maxsize=None)
 def default_user_agent(name="python-requests"):
     """
     Return a string representing the default user agent.
