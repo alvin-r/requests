@@ -74,7 +74,10 @@ class CaseInsensitiveDict(MutableMapping):
 
     # Copy is required
     def copy(self):
-        return CaseInsensitiveDict(self._store.values())
+        # Directly utilize _store without converting to and from a list
+        new_dict = CaseInsensitiveDict()
+        new_dict._store = self._store.copy()
+        return new_dict
 
     def __repr__(self):
         return str(dict(self.items()))
@@ -86,6 +89,8 @@ class LookupDict(dict):
     def __init__(self, name=None):
         self.name = name
         super().__init__()
+        # Use super() properly if any future initialization code needs parent init
+        super(LookupDict, self).__init__()
 
     def __repr__(self):
         return f"<lookup '{self.name}'>"
