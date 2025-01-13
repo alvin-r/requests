@@ -107,22 +107,29 @@ codes = LookupDict(name="status_codes")
 
 
 def _init():
+    # Prepare a list to hold the documentation strings
+    doc_strings = []
+
+    # Process each HTTP status code and its associated titles
     for code, titles in _codes.items():
+        title_doc_list = []
+        
         for title in titles:
+            # Set the attribute for each title
             setattr(codes, title, code)
+            # Set the uppercase attribute if applicable
             if not title.startswith(("\\", "/")):
                 setattr(codes, title.upper(), code)
+            # Collect title strings for documentation
+            title_doc_list.append(f"``{title}``")
 
-    def doc(code):
-        names = ", ".join(f"``{n}``" for n in _codes[code])
-        return "* %d: %s" % (code, names)
+        # Collect the documentation string for this code
+        doc_strings.append(f"* {code}: {', '.join(title_doc_list)}")
 
+    # Update the __doc__ string in one go
     global __doc__
-    __doc__ = (
-        __doc__ + "\n" + "\n".join(doc(code) for code in sorted(_codes))
-        if __doc__ is not None
-        else None
-    )
+    if __doc__ is not None:
+        __doc__ += "\n" + "\n".join(doc_strings)
 
 
 _init()
