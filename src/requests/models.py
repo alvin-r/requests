@@ -288,6 +288,11 @@ class Request(RequestHooksMixin):
         self.params = params
         self.auth = auth
         self.cookies = cookies
+        
+        # Register hooks only if provided
+        if hooks:
+            for k, v in hooks.items():
+                self.register_hook(event=k, hook=v)
 
     def __repr__(self):
         return f"<Request [{self.method}]>"
