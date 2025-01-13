@@ -521,20 +521,25 @@ def _parse_content_type_header(header):
     :return: tuple containing content type and dictionary of
          parameters
     """
-
-    tokens = header.split(";")
-    content_type, params = tokens[0].strip(), tokens[1:]
+    
+    # Use partition to handle the split and strip in one go
+    content_type, _, param_string = header.partition(";")
+    content_type = content_type.strip()
+    
     params_dict = {}
     items_to_strip = "\"' "
 
-    for param in params:
+    # Split the parameter string once and iterate
+    for param in param_string.split(";"):
         param = param.strip()
         if param:
-            key, value = param, True
-            index_of_equals = param.find("=")
-            if index_of_equals != -1:
-                key = param[:index_of_equals].strip(items_to_strip)
-                value = param[index_of_equals + 1 :].strip(items_to_strip)
+            # Use partition to handle finding '=' and splitting
+            key, sep, value = param.partition("=")
+            if sep:  # Only if '=' was found
+                key = key.strip(items_to_strip)
+                value = value.strip(items_to_strip)
+            else:
+                value = True
             params_dict[key.lower()] = value
     return content_type, params_dict
 
@@ -556,10 +561,11 @@ def get_encoding_from_headers(headers):
     if "charset" in params:
         return params["charset"].strip("'\"")
 
-    if "text" in content_type:
+    # Use startswith for direct check of content_type prefix
+    if content_type.startswith("text"):
         return "ISO-8859-1"
 
-    if "application/json" in content_type:
+    if content_type.startswith("application/json"):
         # Assume UTF-8 based on RFC 4627: https://www.ietf.org/rfc/rfc4627.txt since the charset was unset
         return "utf-8"
 
