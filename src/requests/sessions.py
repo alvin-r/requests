@@ -50,6 +50,7 @@ from .utils import (  # noqa: F401
     should_bypass_proxies,
     to_key_val_list,
 )
+from functools import lru_cache
 
 # Preferred clock, based on which one is more accurate on a given system.
 if sys.platform == "win32":
@@ -126,14 +127,13 @@ class SessionRedirectMixin:
 
     def should_strip_auth(self, old_url, new_url):
         """Decide whether Authorization header should be removed when redirecting"""
-        old_parsed = urlparse(old_url)
-        new_parsed = urlparse(new_url)
+        old_parsed = self.cached_urlparse(old_url)
+        new_parsed = self.cached_urlparse(new_url)
+        
         if old_parsed.hostname != new_parsed.hostname:
             return True
-        # Special case: allow http -> https redirect when using the standard
-        # ports. This isn't specified by RFC 7235, but is kept to avoid
-        # breaking backwards compatibility with older versions of requests
-        # that allowed any redirects on the same host.
+
+        # Special case: allow http -> https redirect when using the standard ports.
         if (
             old_parsed.scheme == "http"
             and old_parsed.port in (80, None)
@@ -352,6 +352,11 @@ class SessionRedirectMixin:
 
         prepared_request.method = method
 
+    @lru_cache(maxsize=None)
+    def cached_urlparse(self, url):
+        """Cache results of urlparse to minimize repetitive parsing."""
+        return urlparse(url)
+
 
 class Session(SessionRedirectMixin):
     """A Requests session.
@@ -447,6 +452,8 @@ class Session(SessionRedirectMixin):
         self.adapters = OrderedDict()
         self.mount("https://", HTTPAdapter())
         self.mount("http://", HTTPAdapter())
+        self.adapters["https://"] = HTTPAdapter()
+        self.adapters["http://"] = HTTPAdapter()
 
     def __enter__(self):
         return self
