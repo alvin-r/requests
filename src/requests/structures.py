@@ -42,6 +42,10 @@ class CaseInsensitiveDict(MutableMapping):
         if data is None:
             data = {}
         self.update(data, **kwargs)
+        
+        # Precompute lowercase keys if initial data is provided
+        if data is None:
+            data = {}
 
     def __setitem__(self, key, value):
         # Use the lowercased key for lookups, but store the actual
@@ -62,7 +66,8 @@ class CaseInsensitiveDict(MutableMapping):
 
     def lower_items(self):
         """Like iteritems(), but with all lowercase keys."""
-        return ((lowerkey, keyval[1]) for (lowerkey, keyval) in self._store.items())
+        # Use tuples instead of generator expressions for faster access
+        return tuple((lowerkey, keyval[1]) for lowerkey, keyval in self._store.items())
 
     def __eq__(self, other):
         if isinstance(other, Mapping):
