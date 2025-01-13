@@ -690,11 +690,11 @@ def address_in_network(ip, net):
 
     :rtype: bool
     """
-    ipaddr = struct.unpack("=L", socket.inet_aton(ip))[0]
+    ipaddr = struct.unpack("!I", socket.inet_aton(ip))[0]
     netaddr, bits = net.split("/")
-    netmask = struct.unpack("=L", socket.inet_aton(dotted_netmask(int(bits))))[0]
-    network = struct.unpack("=L", socket.inet_aton(netaddr))[0] & netmask
-    return (ipaddr & netmask) == (network & netmask)
+    netmask = (0xFFFFFFFF << (32 - int(bits))) & 0xFFFFFFFF
+    network = struct.unpack("!I", socket.inet_aton(netaddr))[0] & netmask
+    return (ipaddr & netmask) == network
 
 
 def dotted_netmask(mask):
