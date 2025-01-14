@@ -77,7 +77,8 @@ class CaseInsensitiveDict(MutableMapping):
         return CaseInsensitiveDict(self._store.values())
 
     def __repr__(self):
-        return str(dict(self.items()))
+        # Use a list comprehension for faster item retrieval
+        return str({key: value for key, value in self._store.values()})
 
 
 class LookupDict(dict):
