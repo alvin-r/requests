@@ -36,12 +36,14 @@ class MockRequest:
         self._r = request
         self._new_headers = {}
         self.type = urlparse(self._r.url).scheme
+        parsed_url = urlparse(self._r.url)  # Parse once during initialization.
+        self._host = parsed_url.netloc  # Store the host for quick access.
 
     def get_type(self):
         return self.type
 
     def get_host(self):
-        return urlparse(self._r.url).netloc
+        return self._host  # Return the stored host value.
 
     def get_origin_req_host(self):
         return self.get_host()
