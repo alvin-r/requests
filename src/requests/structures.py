@@ -86,6 +86,8 @@ class LookupDict(dict):
     def __init__(self, name=None):
         self.name = name
         super().__init__()
+        # New attribute _fallback_dict for faster lookups using __dict__
+        self._fallback_dict = self.__dict__
 
     def __repr__(self):
         return f"<lookup '{self.name}'>"
@@ -96,4 +98,4 @@ class LookupDict(dict):
         return self.__dict__.get(key, None)
 
     def get(self, key, default=None):
-        return self.__dict__.get(key, default)
+        return self._fallback_dict.get(key, default)
