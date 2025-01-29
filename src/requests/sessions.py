@@ -11,7 +11,7 @@ import time
 from collections import OrderedDict
 from datetime import timedelta
 
-from ._internal_utils import to_native_string
+from ._internal_utils import to_native_string as internal_to_native_string, to_native_string
 from .adapters import HTTPAdapter
 from .auth import _basic_auth_str
 from .compat import Mapping, cookielib, urljoin, urlparse
@@ -106,23 +106,20 @@ def merge_hooks(request_hooks, session_hooks, dict_class=OrderedDict):
 class SessionRedirectMixin:
     def get_redirect_target(self, resp):
         """Receives a Response. Returns a redirect URI or ``None``"""
-        # Due to the nature of how requests processes redirects this method will
-        # be called at least once upon the original response and at least twice
-        # on each subsequent redirect response (if any).
-        # If a custom mixin is used to handle this logic, it may be advantageous
-        # to cache the redirect location onto the response object as a private
-        # attribute.
-        if resp.is_redirect:
-            location = resp.headers["location"]
-            # Currently the underlying http module on py3 decode headers
-            # in latin1, but empirical evidence suggests that latin1 is very
-            # rarely used with non-ASCII characters in HTTP headers.
-            # It is more likely to get UTF8 header rather than latin1.
-            # This causes incorrect handling of UTF8 encoded location headers.
-            # To solve this, we re-encode the location in latin1.
-            location = location.encode("latin1")
-            return to_native_string(location, "utf8")
-        return None
+        # Check for redirection; if not, return None immediately for efficiency
+        if not resp.is_redirect:
+            return None
+        
+        location = resp.headers["location"]
+        
+        # Attempt to decode and re-encode the location directly to handle edge cases of Latin-1
+        try:
+            location = location.encode("latin1").decode("utf8")
+        except UnicodeDecodeError:
+            # Revert to the default handling using internal utility for robustness
+            location = internal_to_native_string(location, "utf8")
+        
+        return location
 
     def should_strip_auth(self, old_url, new_url):
         """Decide whether Authorization header should be removed when redirecting"""
