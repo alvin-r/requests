@@ -47,9 +47,7 @@ from .utils import (  # noqa: F401
     requote_uri,
     resolve_proxies,
     rewind_body,
-    should_bypass_proxies,
-    to_key_val_list,
-)
+    should_bypass_proxies)
 
 # Preferred clock, based on which one is more accurate on a given system.
 if sys.platform == "win32":
@@ -76,12 +74,14 @@ def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
     ):
         return request_setting
 
-    merged_setting = dict_class(to_key_val_list(session_setting))
-    merged_setting.update(to_key_val_list(request_setting))
+    # Directly using update with iteritems from both session and request settings 
+    # for more efficient merging, reducing conversion overhead.
+    merged_setting = dict_class()
+    merged_setting.update(session_setting)
+    merged_setting.update(request_setting)
 
-    # Remove keys that are set to None. Extract keys first to avoid altering
-    # the dictionary during iteration.
-    none_keys = [k for (k, v) in merged_setting.items() if v is None]
+    # Keys set to None will be removed efficiently by iterating and removing in one loop.
+    none_keys = [k for k in merged_setting if merged_setting[k] is None]
     for key in none_keys:
         del merged_setting[key]
 
