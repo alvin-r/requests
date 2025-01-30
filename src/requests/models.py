@@ -656,50 +656,39 @@ class Response:
     ]
 
     def __init__(self):
+        # Initialize instance variables with default values
         self._content = False
         self._content_consumed = False
         self._next = None
 
-        #: Integer Code of responded HTTP Status, e.g. 404 or 200.
+        # Initialize HTTP status code
         self.status_code = None
 
-        #: Case-insensitive Dictionary of Response Headers.
-        #: For example, ``headers['content-encoding']`` will return the
-        #: value of a ``'Content-Encoding'`` response header.
+        # Initialize headers as a case-insensitive dictionary
         self.headers = CaseInsensitiveDict()
 
-        #: File-like object representation of response (for advanced usage).
-        #: Use of ``raw`` requires that ``stream=True`` be set on the request.
-        #: This requirement does not apply for use internally to Requests.
+        # Initialize raw response for advanced usage
         self.raw = None
 
-        #: Final URL location of Response.
+        # Initialize URL of the response
         self.url = None
 
-        #: Encoding to decode with when accessing r.text.
+        # Initialize encoding for decoding response text
         self.encoding = None
 
-        #: A list of :class:`Response <Response>` objects from
-        #: the history of the Request. Any redirect responses will end
-        #: up here. The list is sorted from the oldest to the most recent request.
+        # Initialize request history tracking
         self.history = []
 
-        #: Textual reason of responded HTTP Status, e.g. "Not Found" or "OK".
+        # Initialize textual reason corresponding to HTTP status
         self.reason = None
 
-        #: A CookieJar of Cookies the server sent back.
+        # Initialize CookieJar for cookies sent back by server
         self.cookies = cookiejar_from_dict({})
 
-        #: The amount of time elapsed between sending the request
-        #: and the arrival of the response (as a timedelta).
-        #: This property specifically measures the time taken between sending
-        #: the first byte of the request and finishing parsing the headers. It
-        #: is therefore unaffected by consuming the response content or the
-        #: value of the ``stream`` keyword argument.
+        # Initialize elapsed time between request dispatch and response arrival
         self.elapsed = datetime.timedelta(0)
 
-        #: The :class:`PreparedRequest <PreparedRequest>` object to which this
-        #: is a response.
+        # Initialize reference to PreparedRequest object that corresponds to this response
         self.request = None
 
     def __enter__(self):
@@ -1035,3 +1024,12 @@ class Response:
         release_conn = getattr(self.raw, "release_conn", None)
         if release_conn is not None:
             release_conn()
+
+    @property
+    def ok(self):
+        """Returns True if status_code is less than 400.
+        
+        This property checks if the status code of the response is between
+        200 and 399 to confirm response success. Not a specific check for 200 OK.
+        """
+        return 200 <= self.status_code < 400
