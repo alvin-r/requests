@@ -709,11 +709,11 @@ class Response:
         self.close()
 
     def __getstate__(self):
-        # Consume everything; accessing the content attribute makes
-        # sure the content has been fully read.
+        # Consume the content only if it hasn't been consumed yet, ensuring efficiency.
         if not self._content_consumed:
-            self.content
+            self._consume_content()
 
+        # Use a dictionary comprehension to efficiently create the state dictionary.
         return {attr: getattr(self, attr, None) for attr in self.__attrs__}
 
     def __setstate__(self, state):
@@ -1035,3 +1035,9 @@ class Response:
         release_conn = getattr(self.raw, "release_conn", None)
         if release_conn is not None:
             release_conn()
+
+    def _consume_content(self):
+        """Ensure the content has been fully read."""
+        if self._content is not False:
+            self.content  # Triggers the reading of the content
+        self._content_consumed = True
