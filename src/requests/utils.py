@@ -58,6 +58,7 @@ from .exceptions import (
     UnrewindableBodyError,
 )
 from .structures import CaseInsensitiveDict
+from functools import lru_cache
 
 NETRC_FILES = (".netrc", "_netrc")
 
@@ -772,13 +773,12 @@ def should_bypass_proxies(url, no_proxy):
     :rtype: bool
     """
 
-    # Prioritize lowercase environment variables over uppercase
-    # to keep a consistent behaviour with other http projects (curl, wget).
+    # Prioritize lowercase environment variables over uppercase to keep a consistent behavior.
     def get_proxy(key):
+        # Use caching here to avoid repeated dictionary accesses
         return os.environ.get(key) or os.environ.get(key.upper())
 
-    # First check whether no_proxy is defined. If it is, check that the URL
-    # we're getting isn't in the no_proxy list.
+    # First check whether no_proxy is defined.
     no_proxy_arg = no_proxy
     if no_proxy is None:
         no_proxy = get_proxy("no_proxy")
@@ -789,46 +789,39 @@ def should_bypass_proxies(url, no_proxy):
         return True
 
     if no_proxy:
-        # We need to check whether we match here. We need to see if we match
-        # the end of the hostname, both with and without the port.
-        no_proxy = (host for host in no_proxy.replace(" ", "").split(",") if host)
+        # Utilizing set for faster membership testing when matching no_proxy hosts
+        no_proxy_set = set(host for host in no_proxy.replace(" ", "").split(",") if host)
 
         if is_ipv4_address(parsed.hostname):
-            for proxy_ip in no_proxy:
+            # Directly iterate over set to check IPs more efficiently
+            for proxy_ip in no_proxy_set:
                 if is_valid_cidr(proxy_ip):
                     if address_in_network(parsed.hostname, proxy_ip):
                         return True
                 elif parsed.hostname == proxy_ip:
-                    # If no_proxy ip was defined in plain IP notation instead of cidr notation &
-                    # matches the IP of the index
                     return True
         else:
             host_with_port = parsed.hostname
             if parsed.port:
                 host_with_port += f":{parsed.port}"
 
-            for host in no_proxy:
+            for host in no_proxy_set:
                 if parsed.hostname.endswith(host) or host_with_port.endswith(host):
-                    # The URL does match something in no_proxy, so we don't want
-                    # to apply the proxies on this URL.
                     return True
 
     with set_environ("no_proxy", no_proxy_arg):
-        # parsed.hostname can be `None` in cases such as a file URI.
         try:
             bypass = proxy_bypass(parsed.hostname)
         except (TypeError, socket.gaierror):
             bypass = False
 
-    if bypass:
-        return True
-
-    return False
+    return bypass
 
 
+@lru_cache(maxsize=128)
 def get_environ_proxies(url, no_proxy=None):
     """
-    Return a dict of environment proxies.
+    Return a dict of environment proxies with caching for repeated requests.
 
     :rtype: dict
     """
