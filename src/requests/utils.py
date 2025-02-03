@@ -841,27 +841,37 @@ def get_environ_proxies(url, no_proxy=None):
 def select_proxy(url, proxies):
     """Select a proxy for the url, if applicable.
 
-    :param url: The url being for the request
+    :param url: The url being used for the request
     :param proxies: A dictionary of schemes or schemes and hosts to proxy URLs
     """
-    proxies = proxies or {}
+    # Return immediately if proxies is None or an empty dictionary
+    if not proxies:
+        return None
+
     urlparts = urlparse(url)
-    if urlparts.hostname is None:
-        return proxies.get(urlparts.scheme, proxies.get("all"))
+    hostname = urlparts.hostname
+    scheme = urlparts.scheme
 
-    proxy_keys = [
-        urlparts.scheme + "://" + urlparts.hostname,
-        urlparts.scheme,
-        "all://" + urlparts.hostname,
+    # Return None if there is no hostname
+    if hostname is None:
+        return proxies.get(scheme, proxies.get("all"))
+
+    # Create a direct tuple to reference instead of computing multiple keys
+    # The order of these keys is significant
+    proxy_key_order = (
+        f"{scheme}://{hostname}",
+        scheme,
+        f"all://{hostname}",
         "all",
-    ]
-    proxy = None
-    for proxy_key in proxy_keys:
-        if proxy_key in proxies:
-            proxy = proxies[proxy_key]
-            break
+    )
 
-    return proxy
+    # Iterate over possible keys and return the first matching proxy
+    for proxy_key in proxy_key_order:
+        if proxy_key in proxies:
+            return proxies[proxy_key]
+
+    # If no proxy is found, return None
+    return None
 
 
 def resolve_proxies(request, proxies, trust_env=True):
