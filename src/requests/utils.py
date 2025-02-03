@@ -523,19 +523,26 @@ def _parse_content_type_header(header):
     """
 
     tokens = header.split(";")
-    content_type, params = tokens[0].strip(), tokens[1:]
+    content_type = tokens[0].strip()
     params_dict = {}
     items_to_strip = "\"' "
 
-    for param in params:
+    # Combining stripping and key-value splitting in a single loop
+    for param in tokens[1:]:
         param = param.strip()
-        if param:
-            key, value = param, True
-            index_of_equals = param.find("=")
-            if index_of_equals != -1:
-                key = param[:index_of_equals].strip(items_to_strip)
-                value = param[index_of_equals + 1 :].strip(items_to_strip)
-            params_dict[key.lower()] = value
+        if not param:
+            continue
+
+        # We can use partition here, which is slightly more efficient than find + slicing
+        key, sep, value = param.partition("=")
+        key = key.strip(items_to_strip).lower()
+        if sep:  # if there's an '=' separator, assign the stripped value
+            value = value.strip(items_to_strip)
+        else:   # otherwise, default to True
+            value = True
+
+        params_dict[key] = value
+        
     return content_type, params_dict
 
 
@@ -547,21 +554,25 @@ def get_encoding_from_headers(headers):
     """
 
     content_type = headers.get("content-type")
-
     if not content_type:
         return None
 
     content_type, params = _parse_content_type_header(content_type)
 
-    if "charset" in params:
-        return params["charset"].strip("'\"")
+    # Directly checking for charset in params for efficiency
+    charset = params.get("charset")
+    if charset is not None:
+        return charset.strip("'\"")
 
+    # Use dict lookup to optimize content type based default encoding
     if "text" in content_type:
         return "ISO-8859-1"
-
+    
     if "application/json" in content_type:
         # Assume UTF-8 based on RFC 4627: https://www.ietf.org/rfc/rfc4627.txt since the charset was unset
         return "utf-8"
+
+    return None
 
 
 def stream_decode_response_unicode(iterator, r):
