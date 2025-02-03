@@ -31,19 +31,26 @@ class MockRequest:
     the new headers via `get_new_headers()` and interpreting them appropriately. You
     probably want `get_cookie_header`, defined below.
     """
-
+    
     def __init__(self, request):
         self._r = request
         self._new_headers = {}
-        self.type = urlparse(self._r.url).scheme
+
+        # Parse the URL once and store the result for reuse
+        self._parsed_url = urlparse(self._r.url)
+
+        # Directly access the stored parsed result for scheme
+        self.type = self._parsed_url.scheme
 
     def get_type(self):
         return self.type
 
     def get_host(self):
-        return urlparse(self._r.url).netloc
+        # Directly return the stored netloc from the parsed URL
+        return self._parsed_url.netloc
 
     def get_origin_req_host(self):
+        # Reuse get_host which already returns the required netloc
         return self.get_host()
 
     def get_full_url(self):
