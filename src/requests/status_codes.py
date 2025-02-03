@@ -107,22 +107,23 @@ codes = LookupDict(name="status_codes")
 
 
 def _init():
+    doc_parts = []  # Collect documentation parts once
     for code, titles in _codes.items():
         for title in titles:
             setattr(codes, title, code)
-            if not title.startswith(("\\", "/")):
-                setattr(codes, title.upper(), code)
+            # Only set the upper case attribute if it's different from the lower case title
+            upper_title = title.upper()
+            if not title.startswith(("\\", "/")) and upper_title != title:
+                setattr(codes, upper_title, code)
 
-    def doc(code):
-        names = ", ".join(f"``{n}``" for n in _codes[code])
-        return "* %d: %s" % (code, names)
+        # Build documentation parts to construct the __doc__ string later
+        names = ", ".join(f"``{n}``" for n in titles)
+        doc_parts.append(f"* {code}: {names}")
 
+    # Update the __doc__ attribute if applicable
     global __doc__
-    __doc__ = (
-        __doc__ + "\n" + "\n".join(doc(code) for code in sorted(_codes))
-        if __doc__ is not None
-        else None
-    )
+    if __doc__ is not None:
+        __doc__ += "\n" + "\n".join(doc_parts)
 
 
 _init()
