@@ -38,10 +38,23 @@ class CaseInsensitiveDict(MutableMapping):
     """
 
     def __init__(self, data=None, **kwargs):
+        """
+        Initializes an OrderedDict to store the data internally. 
+        Accepts an optional data parameter and keyword arguments 
+        to initialize the dictionary.
+        """
         self._store = OrderedDict()
         if data is None:
             data = {}
-        self.update(data, **kwargs)
+
+        # If data is provided, optimize update process by using _update_store directly
+        if hasattr(data, 'items'):
+            self._update_store(data.items())  # improved efficiency by avoiding intermediate dictionary creation
+        else:
+            self._update_store(data)
+
+        if kwargs:
+            self._update_store(kwargs.items())
 
     def __setitem__(self, key, value):
         # Use the lowercased key for lookups, but store the actual
@@ -77,7 +90,17 @@ class CaseInsensitiveDict(MutableMapping):
         return CaseInsensitiveDict(self._store.values())
 
     def __repr__(self):
-        return str(dict(self.items()))
+        """
+        Provides a string representation with case-sensitive keys preserved.
+        """
+        return str({casedkey: mappedvalue for casedkey, mappedvalue in self._store.values()})
+
+    def _update_store(self, items):
+        """
+        Helper function to update _store directly with provided items.
+        """
+        for key, value in items:
+            self._store[key.lower()] = (key, value)
 
 
 class LookupDict(dict):
