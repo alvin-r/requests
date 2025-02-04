@@ -58,6 +58,7 @@ from .exceptions import (
     UnrewindableBodyError,
 )
 from .structures import CaseInsensitiveDict
+from functools import lru_cache
 
 NETRC_FILES = (".netrc", "_netrc")
 
@@ -691,12 +692,13 @@ def address_in_network(ip, net):
     :rtype: bool
     """
     ipaddr = struct.unpack("=L", socket.inet_aton(ip))[0]
-    netaddr, bits = net.split("/")
-    netmask = struct.unpack("=L", socket.inet_aton(dotted_netmask(int(bits))))[0]
-    network = struct.unpack("=L", socket.inet_aton(netaddr))[0] & netmask
-    return (ipaddr & netmask) == (network & netmask)
+    net_parts = parse_network(net)
+    netaddr, netmask = net_parts
+    network = netaddr & netmask
+    return (ipaddr & netmask) == network
 
 
+@lru_cache(None)  # Cache results to avoid recomputation
 def dotted_netmask(mask):
     """Converts mask from /xx format to xxx.xxx.xxx.xxx
 
@@ -1097,3 +1099,16 @@ def rewind_body(prepared_request):
             )
     else:
         raise UnrewindableBodyError("Unable to rewind request body for redirect.")
+
+@lru_cache(None)  # Cache results to avoid recomputation
+def parse_network(net):
+    """ Parses the network address and its mask and calculates netmask based on it 
+    
+    Example: For net = "192.168.1.0/24", returns a tuple containing network integer and netmask integer
+
+    :rtype: tuple
+    """
+    netaddr, bits = net.split("/")
+    netaddr = struct.unpack("=L", socket.inet_aton(netaddr))[0]
+    netmask = struct.unpack("=L", socket.inet_aton(dotted_netmask(int(bits))))[0]
+    return netaddr, netmask
