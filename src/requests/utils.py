@@ -553,8 +553,9 @@ def get_encoding_from_headers(headers):
 
     content_type, params = _parse_content_type_header(content_type)
 
-    if "charset" in params:
-        return params["charset"].strip("'\"")
+    charset = params.get("charset")
+    if charset:
+        return charset.strip("'\"")
 
     if "text" in content_type:
         return "ISO-8859-1"
@@ -610,24 +611,21 @@ def get_unicode_from_response(r):
             " warning should only appear once.)"
         ),
         DeprecationWarning,
+        stacklevel=2
     )
 
-    tried_encodings = []
-
-    # Try charset from content-type
+    # Optimize by removing unnecessary intermediate list
     encoding = get_encoding_from_headers(r.headers)
 
     if encoding:
         try:
             return str(r.content, encoding)
         except UnicodeError:
-            tried_encodings.append(encoding)
+            pass
 
     # Fall back:
-    try:
-        return str(r.content, encoding, errors="replace")
-    except TypeError:
-        return r.content
+    # Only try to replace if an encoding was determined
+    return str(r.content, encoding, errors="replace") if encoding else r.content
 
 
 # The unreserved URI characters (RFC 3986)
