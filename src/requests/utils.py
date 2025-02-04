@@ -527,14 +527,17 @@ def _parse_content_type_header(header):
     params_dict = {}
     items_to_strip = "\"' "
 
+    # Utilizing str.partition for more efficient key-value extraction
     for param in params:
         param = param.strip()
         if param:
-            key, value = param, True
-            index_of_equals = param.find("=")
-            if index_of_equals != -1:
-                key = param[:index_of_equals].strip(items_to_strip)
-                value = param[index_of_equals + 1 :].strip(items_to_strip)
+            key, equal, value = param.partition("=")
+            if equal:  # Only if '=' was found
+                key = key.strip(items_to_strip)
+                value = value.strip(items_to_strip)
+            else:
+                value = True
+
             params_dict[key.lower()] = value
     return content_type, params_dict
 
@@ -553,6 +556,7 @@ def get_encoding_from_headers(headers):
 
     content_type, params = _parse_content_type_header(content_type)
 
+    # Directly returning from condition without separate return variable
     if "charset" in params:
         return params["charset"].strip("'\"")
 
@@ -562,6 +566,8 @@ def get_encoding_from_headers(headers):
     if "application/json" in content_type:
         # Assume UTF-8 based on RFC 4627: https://www.ietf.org/rfc/rfc4627.txt since the charset was unset
         return "utf-8"
+
+    return None  # Make sure a return value exists for all code paths
 
 
 def stream_decode_response_unicode(iterator, r):
