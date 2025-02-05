@@ -107,22 +107,27 @@ codes = LookupDict(name="status_codes")
 
 
 def _init():
+    # Precompute the transformed status code entries for better performance
+    transformed_codes = []
+    formatted_docs = []
+    
     for code, titles in _codes.items():
+        doc_strings = []
         for title in titles:
+            # Use 'setattr' to set the codes based on titles
             setattr(codes, title, code)
+            doc_strings.append(f"``{title}``")
             if not title.startswith(("\\", "/")):
-                setattr(codes, title.upper(), code)
+                # Only name transformation here, so it's computed once.
+                upper_title = title.upper()
+                setattr(codes, upper_title, code)
+        
+        formatted_docs.append("* %d: %s" % (code, ", ".join(doc_strings)))
 
-    def doc(code):
-        names = ", ".join(f"``{n}``" for n in _codes[code])
-        return "* %d: %s" % (code, names)
-
+    # Optimize document string concatenation by joining precomputed strings
     global __doc__
-    __doc__ = (
-        __doc__ + "\n" + "\n".join(doc(code) for code in sorted(_codes))
-        if __doc__ is not None
-        else None
-    )
+    if __doc__ is not None:
+        __doc__ += "\n" + "\n".join(formatted_docs)
 
 
 _init()
