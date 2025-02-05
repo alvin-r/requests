@@ -207,42 +207,35 @@ def super_len(o):
 def get_netrc_auth(url, raise_errors=False):
     """Returns the Requests tuple auth for a given url from netrc."""
 
-    netrc_file = os.environ.get("NETRC")
-    if netrc_file is not None:
-        netrc_locations = (netrc_file,)
-    else:
-        netrc_locations = (f"~/{f}" for f in NETRC_FILES)
+    # Collect initial potential netrc locations
+    netrc_locations = (os.environ.get("NETRC"),) if "NETRC" in os.environ else (f"~/{f}" for f in NETRC_FILES)
+
+    # Filter out any None entries caused by a nonexistent environment variable
+    netrc_locations = filter(None, netrc_locations)
 
     try:
         from netrc import NetrcParseError, netrc
 
         netrc_path = None
 
-        for f in netrc_locations:
-            try:
-                loc = os.path.expanduser(f)
-            except KeyError:
-                # os.path.expanduser can fail when $HOME is undefined and
-                # getpwuid fails. See https://bugs.python.org/issue20164 &
-                # https://github.com/psf/requests/issues/1846
-                return
+        expanded_paths = (os.path.expanduser(f) for f in netrc_locations)
+        
+        for loc in expanded_paths:
+            if not loc:
+                continue  # Skip if loc wasn't successfully expanded
 
             if os.path.exists(loc):
                 netrc_path = loc
                 break
 
         # Abort early if there isn't one.
-        if netrc_path is None:
+        if not netrc_path:
             return
 
         ri = urlparse(url)
 
-        # Strip port numbers from netloc. This weird `if...encode`` dance is
-        # used for Python 3.2, which doesn't support unicode literals.
-        splitstr = b":"
-        if isinstance(url, str):
-            splitstr = splitstr.decode("ascii")
-        host = ri.netloc.split(splitstr)[0]
+        # Strip port numbers from netloc
+        host = ri.netloc.split(':')[0]
 
         try:
             _netrc = netrc(netrc_path).authenticators(host)
@@ -251,8 +244,7 @@ def get_netrc_auth(url, raise_errors=False):
                 login_i = 0 if _netrc[0] else 1
                 return (_netrc[login_i], _netrc[2])
         except (NetrcParseError, OSError):
-            # If there was a parsing error or a permissions issue reading the file,
-            # we'll just skip netrc auth unless explicitly asked to raise errors.
+            # Handle parsing errors or permissions issues
             if raise_errors:
                 raise
 
