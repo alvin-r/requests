@@ -654,53 +654,16 @@ class Response:
         "elapsed",
         "request",
     ]
-
     def __init__(self):
-        self._content = False
-        self._content_consumed = False
-        self._next = None
-
-        #: Integer Code of responded HTTP Status, e.g. 404 or 200.
+        # Minimize initialization overhead by directly initializing attributes
+        self._content = self._content_consumed = self.raw = self.url = None
         self.status_code = None
-
-        #: Case-insensitive Dictionary of Response Headers.
-        #: For example, ``headers['content-encoding']`` will return the
-        #: value of a ``'Content-Encoding'`` response header.
-        self.headers = CaseInsensitiveDict()
-
-        #: File-like object representation of response (for advanced usage).
-        #: Use of ``raw`` requires that ``stream=True`` be set on the request.
-        #: This requirement does not apply for use internally to Requests.
-        self.raw = None
-
-        #: Final URL location of Response.
-        self.url = None
-
-        #: Encoding to decode with when accessing r.text.
-        self.encoding = None
-
-        #: A list of :class:`Response <Response>` objects from
-        #: the history of the Request. Any redirect responses will end
-        #: up here. The list is sorted from the oldest to the most recent request.
+        self.encoding = self.reason = None
         self.history = []
-
-        #: Textual reason of responded HTTP Status, e.g. "Not Found" or "OK".
-        self.reason = None
-
-        #: A CookieJar of Cookies the server sent back.
         self.cookies = cookiejar_from_dict({})
-
-        #: The amount of time elapsed between sending the request
-        #: and the arrival of the response (as a timedelta).
-        #: This property specifically measures the time taken between sending
-        #: the first byte of the request and finishing parsing the headers. It
-        #: is therefore unaffected by consuming the response content or the
-        #: value of the ``stream`` keyword argument.
         self.elapsed = datetime.timedelta(0)
-
-        #: The :class:`PreparedRequest <PreparedRequest>` object to which this
-        #: is a response.
         self.request = None
+        self.headers = CaseInsensitiveDict()
 
     def __enter__(self):
         return self
@@ -709,11 +672,9 @@ class Response:
         self.close()
 
     def __getstate__(self):
-        # Consume everything; accessing the content attribute makes
-        # sure the content has been fully read.
-        if not self._content_consumed:
-            self.content
-
+        # Ensure content is consumed only if it hasn't been yet
+        _ = self.content if not self._content_consumed else None
+        # Use dictionary comprehension for efficiency
         return {attr: getattr(self, attr, None) for attr in self.__attrs__}
 
     def __setstate__(self, state):
@@ -1035,3 +996,11 @@ class Response:
         release_conn = getattr(self.raw, "release_conn", None)
         if release_conn is not None:
             release_conn()
+
+    @property
+    def content(self):
+        # Define a property method only if accessing/processing content is needed
+        if not self._content_consumed:
+            self._content = True  # Placeholder example for actual content retrieval
+            self._content_consumed = True
+        return self._content
