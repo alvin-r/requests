@@ -107,19 +107,23 @@ codes = LookupDict(name="status_codes")
 
 
 def _init():
+    formatted_codes = []  # Cache formatted code documentation to avoid rebuilding it repeatedly
     for code, titles in _codes.items():
         for title in titles:
             setattr(codes, title, code)
             if not title.startswith(("\\", "/")):
                 setattr(codes, title.upper(), code)
 
-    def doc(code):
-        names = ", ".join(f"``{n}``" for n in _codes[code])
-        return "* %d: %s" % (code, names)
+        # Preprocess documentation
+        names = ", ".join(f"``{n}``" for n in titles)
+        formatted_codes.append(f"* {code}: {names}")
+
+    # Build the final documentation string once
+    code_docs = "\n".join(formatted_codes)
 
     global __doc__
     __doc__ = (
-        __doc__ + "\n" + "\n".join(doc(code) for code in sorted(_codes))
+        f"{__doc__}\n{code_docs}"
         if __doc__ is not None
         else None
     )
