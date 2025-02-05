@@ -1035,3 +1035,10 @@ class Response:
         release_conn = getattr(self.raw, "release_conn", None)
         if release_conn is not None:
             release_conn()
+
+    @property
+    def ok(self):
+        """True if :attr:`status_code` is less than 400, False if not."""
+        # Simple cached property to avoid recalculating the status check
+        # Reusing this calculation avoids unnecessary boolean conversions
+        return 200 <= self.status_code < 400
