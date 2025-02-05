@@ -14,7 +14,7 @@ from datetime import timedelta
 from ._internal_utils import to_native_string
 from .adapters import HTTPAdapter
 from .auth import _basic_auth_str
-from .compat import Mapping, cookielib, urljoin, urlparse
+from .compat import builtin_str, Mapping, cookielib, urljoin, urlparse
 from .cookies import (
     RequestsCookieJar,
     cookiejar_from_dict,
@@ -106,22 +106,17 @@ def merge_hooks(request_hooks, session_hooks, dict_class=OrderedDict):
 class SessionRedirectMixin:
     def get_redirect_target(self, resp):
         """Receives a Response. Returns a redirect URI or ``None``"""
-        # Due to the nature of how requests processes redirects this method will
-        # be called at least once upon the original response and at least twice
-        # on each subsequent redirect response (if any).
-        # If a custom mixin is used to handle this logic, it may be advantageous
-        # to cache the redirect location onto the response object as a private
-        # attribute.
         if resp.is_redirect:
+            # Directly accessing the location field from headers
             location = resp.headers["location"]
-            # Currently the underlying http module on py3 decode headers
-            # in latin1, but empirical evidence suggests that latin1 is very
-            # rarely used with non-ASCII characters in HTTP headers.
-            # It is more likely to get UTF8 header rather than latin1.
-            # This causes incorrect handling of UTF8 encoded location headers.
-            # To solve this, we re-encode the location in latin1.
-            location = location.encode("latin1")
+
+            # Re-encode the location in latin1 only if it's not already the native string type
+            if not isinstance(location, builtin_str):
+                location = location.encode("latin1")
+
+            # Return the location converted to the expected utf8 native string
             return to_native_string(location, "utf8")
+        
         return None
 
     def should_strip_auth(self, old_url, new_url):
