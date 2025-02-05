@@ -52,11 +52,12 @@ def request(method, url, **kwargs):
       <Response [200]>
     """
 
-    # By using the 'with' statement we are sure the session is closed, thus we
-    # avoid leaving sockets open which can trigger a ResourceWarning in some
-    # cases, and look like a memory leak in others.
-    with sessions.Session() as session:
+    # Using a 'with' session to avoid leaving open sockets.
+    session = sessions.Session()
+    try:
         return session.request(method=method, url=url, **kwargs)
+    finally:
+        session.close()  # Ensure the session is closed immediately
 
 
 def get(url, params=None, **kwargs):
@@ -142,7 +143,7 @@ def patch(url, data=None, **kwargs):
     :rtype: requests.Response
     """
 
-    return request("patch", url, data=data, **kwargs)
+    return request("PATCH", url, data=data, **kwargs)
 
 
 def delete(url, **kwargs):
